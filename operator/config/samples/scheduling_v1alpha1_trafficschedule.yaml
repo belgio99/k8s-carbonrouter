@@ -1,4 +1,4 @@
-apiVersion: scheduling.carbonshift.io/v1alpha1
+apiVersion: scheduling.carbonrouter.io/v1alpha1
 kind: TrafficSchedule
 metadata:
   labels:

@@ -32,14 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	schedulingv1alpha1 "github.com/belgio99/k8s-carbonshift/operator/api/v1alpha1"
+	schedulingv1alpha1 "github.com/belgio99/k8s-carbonrouter/operator/api/v1alpha1"
 )
 
 /* ─────────────────────────────────────────  Constants  ───────────────────────────────────────── */
 const (
-	carbonLabel            = "carbonshift"                   // high|mid|low
-	enableLabel            = "carbonshift/enabled"           // opt-in
-	origReplicasAnnotation = "carbonshift/original-replicas" // remember replicas
+	carbonLabel            = "carbonrouter"                   // high|mid|low
+	enableLabel            = "carbonrouter/enabled"           // opt-in
+	origReplicasAnnotation = "carbonrouter/original-replicas" // remember replicas
 	defaultRequeue         = 30 * time.Second
 )
 
@@ -59,7 +59,7 @@ type FlavourRouterReconciler struct {
 
 // +kubebuilder:rbac:groups=core,resources=services;serviceaccounts,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=scheduling.carbonshift.io,resources=trafficschedules,verbs=get;list;watch
+// +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices;destinationrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keda.sh,resources=scaledobjects,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch
@@ -70,13 +70,13 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]").WithValues("service", req.NamespacedName)
 
 	// 1. Service opt-in
-	// Gets the service that has the label "carbonshift/enabled=true", which is our "target" service.
+	// Gets the service that has the label "carbonrouter/enabled=true", which is our "target" service.
 	var svc corev1.Service
 	if err := r.Get(ctx, req.NamespacedName, &svc); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if svc.Labels[enableLabel] != "true" {
-		log.Info("Service no longer has Carbonshift enable label, cleaning up resources")
+		log.Info("Service no longer has carbonrouter enable label, cleaning up resources")
 		return ctrl.Result{}, r.cleanupResources(ctx, &svc)
 	}
 
@@ -154,7 +154,7 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *FlavourRouterReconciler) ensureDR(ctx context.Context, svc *corev1.Service) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	log.Info("Ensuring DestinationRule for service", "service", svc.Name)
-	name := fmt.Sprintf("%s-carbonshift-dr", svc.Name)
+	name := fmt.Sprintf("%s-carbonrouter-dr", svc.Name)
 	host := fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace)
 
 	newDR := networkingkube.DestinationRule{
@@ -189,7 +189,7 @@ func (r *FlavourRouterReconciler) ensureDR(ctx context.Context, svc *corev1.Serv
 
 func (r *FlavourRouterReconciler) ensureVS(ctx context.Context, svc *corev1.Service) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
-	name := fmt.Sprintf("%s-carbonshift-vs", svc.Name)
+	name := fmt.Sprintf("%s-carbonrouter-vs", svc.Name)
 	host := fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace)
 	sourceHost := fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace)
 
@@ -205,7 +205,7 @@ func (r *FlavourRouterReconciler) ensureVS(ctx context.Context, svc *corev1.Serv
 		httpRoutes = append(httpRoutes, &networkingapi.HTTPRoute{
 			Match: []*networkingapi.HTTPMatchRequest{{
 				Headers: map[string]*networkingapi.StringMatch{
-					"x-carbonshift": {MatchType: &networkingapi.StringMatch_Exact{Exact: m.val}},
+					"x-carbonrouter": {MatchType: &networkingapi.StringMatch_Exact{Exact: m.val}},
 				},
 			}},
 			Route: []*networkingapi.HTTPRouteDestination{{
@@ -288,14 +288,14 @@ func (r *FlavourRouterReconciler) cleanupResources(ctx context.Context, svc *cor
 	log.Info("Starting resource cleanup")
 
 	// Delete VirtualService
-	vsName := fmt.Sprintf("%s-carbonshift-vs", svc.Name)
+	vsName := fmt.Sprintf("%s-carbonrouter-vs", svc.Name)
 	vs := &networkingkube.VirtualService{ObjectMeta: metav1.ObjectMeta{Name: vsName, Namespace: svc.Namespace}}
 	if err := r.Delete(ctx, vs, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
 		log.Error(err, "Failed to delete VirtualService")
 	}
 
 	// Delete DestinationRule
-	drName := fmt.Sprintf("%s-carbonshift-dr", svc.Name)
+	drName := fmt.Sprintf("%s-carbonrouter-dr", svc.Name)
 	dr := &networkingkube.DestinationRule{ObjectMeta: metav1.ObjectMeta{Name: drName, Namespace: svc.Namespace}}
 	if err := r.Delete(ctx, dr, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
 		log.Error(err, "Failed to delete DestinationRule")
@@ -426,11 +426,11 @@ func (r *FlavourRouterReconciler) ensureBufferServiceService(ctx context.Context
 
 	labels := map[string]string{
 		"app.kubernetes.io/name":       fmt.Sprintf("buffer-service-%s", component),
-		"app.kubernetes.io/instance":   "carbonshift",
+		"app.kubernetes.io/instance":   "carbonrouter",
 		"app.kubernetes.io/component":  component,
-		"app.kubernetes.io/part-of":    "carbonshift",
-		"carbonshift/parent-service":   svc.Name,
-		"app.kubernetes.io/managed-by": "carbonshift-operator",
+		"app.kubernetes.io/part-of":    "carbonrouter",
+		"carbonrouter/parent-service":  svc.Name,
+		"app.kubernetes.io/managed-by": "carbonrouter-operator",
 	}
 
 	var ports []corev1.ServicePort
@@ -454,7 +454,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceService(ctx context.Context
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
 				"app.kubernetes.io/name":     fmt.Sprintf("buffer-service-%s", component),
-				"app.kubernetes.io/instance": "carbonshift",
+				"app.kubernetes.io/instance": "carbonrouter",
 			},
 			Ports: ports,
 			Type:  corev1.ServiceTypeClusterIP,
@@ -493,11 +493,11 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 
 	labels := map[string]string{
 		"app.kubernetes.io/name":       fmt.Sprintf("buffer-service-%s", component),
-		"app.kubernetes.io/instance":   "carbonshift",
+		"app.kubernetes.io/instance":   "carbonrouter",
 		"app.kubernetes.io/component":  component,
-		"app.kubernetes.io/part-of":    "carbonshift",
-		"carbonshift/parent-service":   svc.Name,
-		"app.kubernetes.io/managed-by": "carbonshift-operator",
+		"app.kubernetes.io/part-of":    "carbonrouter",
+		"carbonrouter/parent-service":  svc.Name,
+		"app.kubernetes.io/managed-by": "carbonrouter-operator",
 	}
 
 	var annotations map[string]string
@@ -508,11 +508,11 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 		annotations = map[string]string{"sidecar.istio.io/inject": "true"}
 		podLabels = map[string]string{
 			"app.kubernetes.io/name":       fmt.Sprintf("buffer-service-%s", component),
-			"app.kubernetes.io/instance":   "carbonshift",
+			"app.kubernetes.io/instance":   "carbonrouter",
 			"app.kubernetes.io/component":  component,
-			"app.kubernetes.io/part-of":    "carbonshift",
-			"carbonshift/parent-service":   svc.Name,
-			"app.kubernetes.io/managed-by": "carbonshift-operator",
+			"app.kubernetes.io/part-of":    "carbonrouter",
+			"carbonrouter/parent-service":  svc.Name,
+			"app.kubernetes.io/managed-by": "carbonrouter-operator",
 			"istio.io/rev":                 "default",
 		}
 		extraEnv = []corev1.EnvVar{
@@ -522,7 +522,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 	}
 
 	baseEnv := []corev1.EnvVar{
-		{Name: "RABBITMQ_URL", Value: "amqp://carbonuser:supersecret@carbonshift-rabbitmq.carbonshift-system.svc.cluster.local:5672"},
+		{Name: "RABBITMQ_URL", Value: "amqp://carbonuser:supersecret@carbonrouter-rabbitmq.carbonrouter-system.svc.cluster.local:5672"},
 		{Name: "TRAFFIC_SCHEDULE_NAME", Value: "TrafficSchedule"},
 		{Name: "METRICS_PORT", Value: "8001"},
 		{Name: "TARGET_SVC_NAME", Value: svc.Name},
@@ -545,7 +545,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app.kubernetes.io/name":     fmt.Sprintf("buffer-service-%s", component),
-					"app.kubernetes.io/instance": "carbonshift",
+					"app.kubernetes.io/instance": "carbonrouter",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -558,7 +558,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 					Containers: []corev1.Container{
 						{
 							Name:            fmt.Sprintf("buffer-service-%s", component),
-							Image:           fmt.Sprintf("ghcr.io/belgio99/k8s-carbonshift/buffer-service-%s:latest", component),
+							Image:           fmt.Sprintf("ghcr.io/belgio99/k8s-carbonrouter/buffer-service-%s:latest", component),
 							ImagePullPolicy: corev1.PullAlways,
 							Env:             allEnv,
 							Resources:       resources,
@@ -678,17 +678,17 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 			Triggers: []kedav1alpha1.ScaleTriggers{
 				{
 					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonshift-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
+					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
 					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.low-power", svc.Namespace, svc.Name), "mode": "QueueLength", "value": "1000000"},
 				},
 				{
 					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonshift-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
+					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
 					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.mid-power", svc.Namespace, svc.Name), "mode": "QueueLength", "value": "1000000"},
 				},
 				{
 					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonshift-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
+					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
 					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.high-power", svc.Namespace, svc.Name), "mode": "QueueLength", "value": "1000000"},
 				},
 				{
@@ -701,7 +701,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 				{
 					Type: "prometheus",
 					Metadata: map[string]string{
-						"serverAddress":       "http://carbonshift-kube-prometheu-prometheus.carbonshift-system.svc:9090",
+						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
 						"query":               "sum(increase(consumer_http_requests_created[60s]))",
 						"threshold":           "1000000",
 						"activationThreshold": "1",
@@ -710,7 +710,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 				{
 					Type: "prometheus",
 					Metadata: map[string]string{
-						"serverAddress": "http://carbonshift-kube-prometheu-prometheus.carbonshift-system.svc:9090",
+						"serverAddress": "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
 						"query":         fmt.Sprintf(`sum(rabbitmq_queue_messages_ready{queue=~"^%s\\.%s\\.queue\\..+"}) * max(schedule_consumption_enabled)`, svc.Namespace, svc.Name),
 						"threshold":     "1",
 					},
@@ -765,7 +765,7 @@ func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context,
 				{
 					Type: "prometheus",
 					Metadata: map[string]string{
-						"serverAddress":       "http://carbonshift-kube-prometheu-prometheus.carbonshift-system.svc:9090",
+						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
 						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_queue_messages_ready{queue="%s.%s.queue.%s"}[30s])) * max(schedule_consumption_enabled)`, svc.Namespace, svc.Name, queueFlavour),
 						"threshold":           "1000000",
 						"activationThreshold": "1",
@@ -773,7 +773,7 @@ func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context,
 				},
 				{
 					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonshift-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
+					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
 					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.%s", svc.Namespace, svc.Name, queueFlavour), "mode": "QueueLength", "value": "1000000"},
 				},
 				{

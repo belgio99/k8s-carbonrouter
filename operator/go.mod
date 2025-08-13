@@ -1,4 +1,4 @@
-module github.com/belgio99/k8s-carbonshift/operator
+module github.com/belgio99/k8s-carbonrouter/operator
 
 go 1.23.8
 

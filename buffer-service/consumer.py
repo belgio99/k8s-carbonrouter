@@ -2,7 +2,7 @@
 """
 consumer.py
 ────────────────────────────────────────────────────────────────────────────
-Consumes the AMQP queues populated by carbonshift-router, forwards the embedded
+Consumes the AMQP queues populated by carbonrouter-router, forwards the embedded
 HTTP request to the target service and answers via AMQP (RPC style).
 """
 
@@ -104,7 +104,7 @@ RETRYABLE_EXC        = (
 # ──────────────────────────────────────────────────────────────
 # FastAPI – only /metrics
 # ──────────────────────────────────────────────────────────────
-app = FastAPI(title="carbonshift-consumer", docs_url=None, redoc_url=None)
+app = FastAPI(title="carbonrouter-consumer", docs_url=None, redoc_url=None)
 
 async def send_with_retry(http_client: httpx.AsyncClient, **req_kw):
     """Send an HTTP request to target services with retry logic."""
@@ -147,7 +147,7 @@ async def forward_and_reply(
             method=payload["method"],
             url=f"{TARGET_BASE_URL}{payload['path']}",
             params=payload.get("query"),
-            headers={**payload.get("headers", {}), "x-carbonshift": flavour},
+            headers={**payload.get("headers", {}), "x-carbonrouter": flavour},
             content=b64dec(payload["body"]),
         )
         status_code = response.status_code
@@ -285,7 +285,7 @@ async def consume_buffer_queue(
 # Main bootstrap
 # ──────────────────────────────────────────────────────────────
 async def main() -> None:
-    print("Starting Carbonshift consumer...")
+    print("Starting carbonrouter consumer...")
     if os.getenv("DEBUG", "false").lower() != "true":
         logging.getLogger("httpx").setLevel(logging.WARNING)
     # Prometheus endpoint

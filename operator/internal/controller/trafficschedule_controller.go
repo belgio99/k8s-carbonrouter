@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	schedulingv1alpha1 "github.com/belgio99/k8s-carbonshift/operator/api/v1alpha1"
+	schedulingv1alpha1 "github.com/belgio99/k8s-carbonrouter/operator/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -43,9 +43,9 @@ type TrafficScheduleReconciler struct {
 
 const pollInterval = 1 * time.Minute
 
-// +kubebuilder:rbac:groups=scheduling.carbonshift.io,resources=trafficschedules,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=scheduling.carbonshift.io,resources=trafficschedules/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=scheduling.carbonshift.io,resources=trafficschedules/finalizers,verbs=update
+// +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -66,7 +66,7 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// 1) Get schedule from decision engine
-	resp, err := http.Get("http://carbonshift-decision-engine.carbonshift-system.svc.cluster.local/schedule")
+	resp, err := http.Get("http://carbonrouter-decision-engine.carbonrouter-system.svc.cluster.local/schedule")
 	if err != nil {
 		log.Error(err, "Failed to get traffic schedule")
 		return ctrl.Result{}, err

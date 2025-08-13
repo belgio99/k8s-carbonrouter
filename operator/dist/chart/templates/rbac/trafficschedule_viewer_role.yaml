@@ -2,7 +2,7 @@
 # This rule is not used by the project operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to scheduling.carbonshift.io resources.
+# Grants read-only access to scheduling.carbonrouter.io resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
@@ -14,7 +14,7 @@ metadata:
   name: trafficschedule-viewer-role
 rules:
 - apiGroups:
-  - scheduling.carbonshift.io
+  - scheduling.carbonrouter.io
   resources:
   - trafficschedules
   verbs:
@@ -22,7 +22,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - scheduling.carbonshift.io
+  - scheduling.carbonrouter.io
   resources:
   - trafficschedules/status
   verbs:

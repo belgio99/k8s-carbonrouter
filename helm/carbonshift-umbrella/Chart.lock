@@ -17,7 +17,7 @@ dependencies:
 - name: decision-engine
   repository: file://../decision-engine
   version: 0.1.0
-- name: carbonshift-operator
+- name: carbonrouter-operator
   repository: file://../../operator/dist/chart
   version: 0.1.0
 digest: sha256:20db43c6503e9bba7f08561139a9ff19ef73b828bfe5d406544ab33256023b15

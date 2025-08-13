@@ -1,6 +1,6 @@
 apiVersion: v2
-name: carbonshift-umbrella
-description: Umbrella Helm Chart for Carbonshift
+name: carbonrouter-umbrella
+description: Umbrella Helm Chart for carbonrouter
 
 # A chart can be either an 'application' or a 'library' chart.
 #
@@ -47,6 +47,6 @@ dependencies:
     version: 0.1.0
     repository: file://../decision-engine
 
-  - name: carbonshift-operator
+  - name: carbonrouter-operator
     version: 0.1.0
     repository: file://../../operator/dist/chart

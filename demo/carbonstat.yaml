@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/instance: carbonstat
     app.kubernetes.io/version: "1.16.0"
     app.kubernetes.io/managed-by: Helm
-    carbonshift/enabled: "true"
+    carbonrouter/enabled: "true"
 spec:
   type: LoadBalancer
   ports:
@@ -47,7 +47,7 @@ spec:
         app.kubernetes.io/instance: carbonstat
         app.kubernetes.io/version: "1.16.0"
         app.kubernetes.io/managed-by: Helm
-        carbonshift: "high"
+        carbonrouter: "high"
     spec:
       serviceAccountName: default
       securityContext:
@@ -56,7 +56,7 @@ spec:
         - name: carbonstat
           securityContext:
             {}
-          image: "ghcr.io/belgio99/k8s-carbonshift/carbonstat:latest"
+          image: "ghcr.io/belgio99/k8s-carbonrouter/carbonstat:latest"
           imagePullPolicy: Always
           env:
             - name: FLAVOUR
@@ -106,7 +106,7 @@ spec:
         app.kubernetes.io/instance: carbonstat
         app.kubernetes.io/version: "1.16.0"
         app.kubernetes.io/managed-by: Helm
-        carbonshift: "mid"
+        carbonrouter: "mid"
     spec:
       serviceAccountName: default
       securityContext:
@@ -115,7 +115,7 @@ spec:
         - name: carbonstat
           securityContext:
             {}
-          image: "ghcr.io/belgio99/k8s-carbonshift/carbonstat:latest"
+          image: "ghcr.io/belgio99/k8s-carbonrouter/carbonstat:latest"
           imagePullPolicy: Always
           env:
             - name: FLAVOUR
@@ -165,7 +165,7 @@ spec:
         app.kubernetes.io/instance: carbonstat
         app.kubernetes.io/version: "1.16.0"
         app.kubernetes.io/managed-by: Helm
-        carbonshift: "low"
+        carbonrouter: "low"
     spec:
       serviceAccountName: default
       securityContext:
@@ -174,7 +174,7 @@ spec:
         - name: carbonstat
           securityContext:
             {}
-          image: "ghcr.io/belgio99/k8s-carbonshift/carbonstat:latest"
+          image: "ghcr.io/belgio99/k8s-carbonrouter/carbonstat:latest"
           imagePullPolicy: Always
           env:
             - name: FLAVOUR

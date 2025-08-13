@@ -46,7 +46,7 @@ class TrafficScheduleManager:
 
     async def load_once(self) -> None:
         obj = await self._api.get_cluster_custom_object(
-            group="scheduling.carbonshift.io",
+            group="scheduling.carbonrouter.io",
             version="v1alpha1",
             plural="trafficschedules",
             name=self._name,
@@ -61,7 +61,7 @@ class TrafficScheduleManager:
             try:
                 stream = self._watch.stream(
                     self._api.list_cluster_custom_object,
-                    group="scheduling.carbonshift.io",
+                    group="scheduling.carbonrouter.io",
                     version="v1alpha1",
                     plural="trafficschedules",
                     field_selector=field_selector,

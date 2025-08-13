@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: carbonshift.io
+domain: carbonrouter.io
 layout:
 - go.kubebuilder.io/v4
 plugins:
@@ -14,7 +14,7 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: carbonshift.io
+  domain: carbonrouter.io
   group: scheduling
   kind: TrafficSchedule
   path: github.com/belgio/k8s-carbonaware-scheduler/operator/api/v1alpha1

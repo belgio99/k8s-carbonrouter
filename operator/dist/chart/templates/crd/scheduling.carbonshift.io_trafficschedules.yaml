@@ -10,9 +10,9 @@ metadata:
     "helm.sh/resource-policy": keep
     {{- end }}
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: trafficschedules.scheduling.carbonshift.io
+  name: trafficschedules.scheduling.carbonrouter.io
 spec:
-  group: scheduling.carbonshift.io
+  group: scheduling.carbonrouter.io
   names:
     kind: TrafficSchedule
     listKind: TrafficScheduleList

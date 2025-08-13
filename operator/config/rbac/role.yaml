@@ -64,7 +64,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - scheduling.carbonshift.io
+  - scheduling.carbonrouter.io
   resources:
   - trafficschedules
   verbs:
@@ -76,13 +76,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - scheduling.carbonshift.io
+  - scheduling.carbonrouter.io
   resources:
   - trafficschedules/finalizers
   verbs:
   - update
 - apiGroups:
-  - scheduling.carbonshift.io
+  - scheduling.carbonrouter.io
   resources:
   - trafficschedules/status
   verbs:

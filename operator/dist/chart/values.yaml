@@ -3,7 +3,7 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: ghcr.io/belgio99/k8s-carbonshift/operator
+      repository: ghcr.io/belgio99/k8s-carbonrouter/operator
       pullPolicy: IfNotPresent
       tag: latest
     args:

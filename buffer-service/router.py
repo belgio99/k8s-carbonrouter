@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-carbonshift_router.py
+carbonrouter_router.py
 ────────────────────────────────────────────────────────────────────────────
 HTTP → RabbitMQ router with “direct/queue” load balancing based on a
 CustomResource (TrafficSchedule).  Espone metriche Prometheus.
@@ -144,7 +144,7 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
       • /metrics endpoint
       • catch-all proxy that forwards to RabbitMQ
     """
-    app = FastAPI(title="carbonshift-router", docs_url=None, redoc_url=None)
+    app = FastAPI(title="carbonrouter-router", docs_url=None, redoc_url=None)
 
     # ───────────── catch-all proxy ─────────────
     @app.api_route(
@@ -158,7 +158,7 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
 
         # ─── select strategy / flavour ───
         urgent = request.headers.get("x-urgent", "false").lower() == "true"
-        forced_flavour = request.headers.get("x-carbonshift")
+        forced_flavour = request.headers.get("x-carbonrouter")
 
         flavour_weights = {
             r["flavourName"]: r["weight"] for r in schedule.get("flavourRules", [])

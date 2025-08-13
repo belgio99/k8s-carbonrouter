@@ -1,4 +1,4 @@
-# This file contains the default values for the CarbonShift umbrella chart.
+# This file contains the default values for the carbonrouter umbrella chart.
 # It is used to set default values for the chart and its dependencies.
 
 rabbitmq:
@@ -24,20 +24,20 @@ base:
   {}
 
 global:
-  istioNamespace: carbonshift-system
+  istioNamespace: carbonrouter-system
   hub: docker.io/istio
   tag: 1.25.0
   proxy:
     autoInject: disabled
 
 istiod:
-  namespace: carbonshift-system
+  namespace: carbonrouter-system
   sidecarInjectorWebhook:
     enableNamespacesByDefault: false
 
 gateway:
   name: gateway
-  namespace: carbonshift-system
+  namespace: carbonrouter-system
 # Add other sub-chart overrides below if needed
 # Disable sidecar injection for non-gateway pods
 decision-engine:
@@ -46,7 +46,7 @@ decision-engine:
 buffer-service:
   podAnnotations:
     sidecar.istio.io/inject: "true"
-carbonshift-operator:
+carbonrouter-operator:
   podAnnotations:
     sidecar.istio.io/inject: "false"
 

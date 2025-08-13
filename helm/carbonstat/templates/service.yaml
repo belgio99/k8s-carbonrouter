@@ -4,7 +4,7 @@ metadata:
   name: {{ include "carbonstat.fullname" . }}
   labels:
     {{- include "carbonstat.labels" . | nindent 4 }}
-    carbonshift/enabled: "true"
+    carbonrouter/enabled: "true"
 spec:
   type: {{ .Values.service.type }}
   ports:
