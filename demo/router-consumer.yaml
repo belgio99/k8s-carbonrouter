@@ -251,8 +251,6 @@ spec:
       serverAddress: http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090
       query: |
         sum(rabbitmq_queue_messages_ready{queue=~"^carbonstat\\.carbonstat\\.queue\\..+"})
-        *
-        max(schedule_consumption_enabled)
       threshold: "1"
 ---
 apiVersion: keda.sh/v1alpha1
@@ -278,7 +276,7 @@ spec:
               queue="carbonstat.carbonstat.queue.low-power"
             }
           [30s])
-          ) * max(schedule_consumption_enabled)
+          )
         threshold: "1000000"
         activationThreshold: "1"
 
@@ -319,7 +317,7 @@ spec:
               queue="carbonstat.carbonstat.queue.mid-power"
             }
           [30s])
-          ) * max(schedule_consumption_enabled)
+          )
         threshold: "1000000"
         activationThreshold: "1"
 
@@ -360,7 +358,7 @@ spec:
               queue="carbonstat.carbonstat.queue.high-power"
             }
           [30s])
-          ) * max(schedule_consumption_enabled)
+          )
         threshold: "1000000"
         activationThreshold: "1"
 

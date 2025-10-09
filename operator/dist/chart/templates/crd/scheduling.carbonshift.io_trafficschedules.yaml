@@ -18,7 +18,7 @@ spec:
     listKind: TrafficScheduleList
     plural: trafficschedules
     singular: trafficschedule
-  scope: Cluster
+  scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
@@ -213,6 +213,36 @@ spec:
                         type: object
                     type: object
                 type: object
+              scheduler:
+                description: SchedulerConfigSpec defines runtime tuning knobs for
+                  the credit scheduler.
+                properties:
+                  carbonCacheTTL:
+                    format: int32
+                    type: integer
+                  carbonTarget:
+                    type: string
+                  carbonTimeout:
+                    format: int32
+                    type: integer
+                  creditMax:
+                    type: string
+                  creditMin:
+                    type: string
+                  creditWindow:
+                    format: int32
+                    type: integer
+                  discoveryInterval:
+                    format: int32
+                    type: integer
+                  policy:
+                    type: string
+                  targetError:
+                    type: string
+                  validFor:
+                    format: int32
+                    type: integer
+                type: object
               target:
                 description: TargetConfig defines the configuration for the target
                   deployments.
@@ -239,26 +269,63 @@ spec:
           status:
             description: TrafficScheduleStatus defines the observed state of TrafficSchedule.
             properties:
-              consumptionEnabled:
-                description: 'ConsumptionEnabled: whether the traffic consumption
-                  is enabled'
-                type: boolean
-              directWeight:
-                description: 'DirectWeight: how much of the traffic should be scheduled
-                  directly to the application (percentage)'
-                type: integer
+              activePolicy:
+                description: ActivePolicy indicates the policy currently selected
+                  by the decision engine.
+                type: string
+              carbonForecastNext:
+                description: CarbonForecastNext is the next slot forecast in gCO2/kWh.
+                type: string
+              carbonForecastNow:
+                description: CarbonForecastNow is the current slot forecast in gCO2/kWh.
+                type: string
+              carbonIndex:
+                description: CarbonIndex reflects the current qualitative carbon intensity
+                  label.
+                type: string
+              creditBalance:
+                description: CreditBalance exposes the current credit balance maintained
+                  by the scheduler.
+                type: string
+              creditMax:
+                description: CreditMax exposes the upper bound applied to the credit
+                  ledger.
+                type: string
+              creditMin:
+                description: CreditMin exposes the lower bound applied to the credit
+                  ledger.
+                type: string
+              creditTarget:
+                description: CreditTarget denotes the configured precision error target.
+                type: string
+              creditVelocity:
+                description: CreditVelocity represents the average rate of change
+                  of the credit balance.
+                type: string
+              diagnostics:
+                additionalProperties:
+                  type: string
+                description: Diagnostics contains policy-specific telemetry useful
+                  for debugging.
+                type: object
+              effectiveReplicaCeilings:
+                additionalProperties:
+                  format: int32
+                  type: integer
+                description: EffectiveReplicaCeilings exposes throttled replica limits
+                  keyed by component name.
+                type: object
               flavourRules:
+                description: FlavourRules provides backward-compatible data for router
+                  components.
                 items:
-                  description: FlavourRule defines the rules for a specific flavour.
+                  description: FlavourRule describes routing weights for router consumers.
                   properties:
                     deadlineSec:
-                      description: 'DeadlineSec: max delay in seconds'
                       type: integer
                     flavourName:
                       type: string
                     weight:
-                      description: 'Weight: how much of the traffic should be scheduled
-                        to this flavour (percentage)'
                       type: integer
                   required:
                   - deadlineSec
@@ -266,19 +333,57 @@ spec:
                   - weight
                   type: object
                 type: array
-              queueWeight:
-                description: 'QueueWeight: how much of the traffic should be scheduled
-                  to the queue (percentage)'
-                type: integer
+              forecastSchedule:
+                description: ForecastSchedule summarises the upcoming half-hour slots
+                  as reported by the provider.
+                items:
+                  description: ForecastSlot describes a single carbon forecast interval.
+                  properties:
+                    forecast:
+                      type: string
+                    from:
+                      type: string
+                    index:
+                      type: string
+                    to:
+                      type: string
+                  required:
+                  - forecast
+                  - from
+                  - to
+                  type: object
+                type: array
+              processingThrottle:
+                description: ProcessingThrottle exports the throttle factor applied
+                  to downstream autoscaling.
+                type: string
+              strategies:
+                description: Strategies contains the routing weights for each known
+                  precision level.
+                items:
+                  description: StrategyDecision describes the scheduler outcome for
+                    a specific precision level.
+                  properties:
+                    precision:
+                      description: Precision is expressed as an integer percentage
+                        (e.g. 100, 85, 60).
+                      type: integer
+                    weight:
+                      description: Weight represents the share of traffic (percentage)
+                        assigned to this precision.
+                      type: integer
+                  required:
+                  - precision
+                  - weight
+                  type: object
+                type: array
               validUntil:
-                description: 'ValidUntil: when the schedule is valid'
+                description: ValidUntil specifies when the schedule should be refreshed.
                 format: date-time
                 type: string
             required:
-            - consumptionEnabled
-            - directWeight
-            - flavourRules
-            - queueWeight
+            - activePolicy
+            - strategies
             - validUntil
             type: object
         type: object

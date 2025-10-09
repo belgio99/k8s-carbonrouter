@@ -17,11 +17,15 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,7 +45,12 @@ type TrafficScheduleReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-const pollInterval = 1 * time.Minute
+const (
+	pollInterval  = 1 * time.Minute
+	engineBaseURL = "http://carbonrouter-decision-engine.carbonrouter-system.svc.cluster.local"
+)
+
+var httpClient = &http.Client{Timeout: 5 * time.Second}
 
 // +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules/status,verbs=get;update;patch
@@ -65,8 +74,15 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Push desired configuration to the decision engine before reading status.
+	if err := pushSchedulerConfig(req.Namespace, req.Name, existing.Spec); err != nil {
+		log.Error(err, "Failed to push scheduler configuration")
+		return ctrl.Result{}, err
+	}
+
 	// 1) Get schedule from decision engine
-	resp, err := http.Get("http://carbonrouter-decision-engine.carbonrouter-system.svc.cluster.local/schedule")
+	url := fmt.Sprintf("%s/schedule/%s/%s", engineBaseURL, req.Namespace, req.Name)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		log.Error(err, "Failed to get traffic schedule")
 		return ctrl.Result{}, err
@@ -75,12 +91,45 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// 2) Temp struct to decode the response
 	var remote struct {
-		DirectWeight       int            `json:"directWeight"`
-		QueueWeight        int            `json:"queueWeight"`
-		FlavourWeights     map[string]int `json:"flavourWeights"`
-		Deadlines          map[string]int `json:"deadlines"`
-		ConsumptionEnabled bool           `json:"consumptionEnabled"`
-		ValidUntilISO      string         `json:"validUntil"`
+		Strategies []struct {
+			Name      string `json:"name"`
+			Precision int    `json:"precision"`
+			Weight    int    `json:"weight"`
+			Deadline  int    `json:"deadline"`
+		} `json:"strategies"`
+		FlavourRules []struct {
+			FlavourName string `json:"flavourName"`
+			Weight      int    `json:"weight"`
+			DeadlineSec int    `json:"deadlineSec"`
+		} `json:"flavourRules"`
+		Policy struct {
+			Name string `json:"name"`
+		} `json:"policy"`
+		ValidUntilISO string `json:"validUntil"`
+		Credits       struct {
+			Balance   float64 `json:"balance"`
+			Velocity  float64 `json:"velocity"`
+			Target    float64 `json:"target"`
+			Min       float64 `json:"min"`
+			Max       float64 `json:"max"`
+			Allowance float64 `json:"allowance"`
+		} `json:"credits"`
+		Processing struct {
+			Throttle float64          `json:"throttle"`
+			Ceilings map[string]int32 `json:"ceilings"`
+		} `json:"processing"`
+		Forecast struct {
+			Index    string  `json:"index"`
+			Now      float64 `json:"now"`
+			Next     float64 `json:"next"`
+			Schedule []struct {
+				From     string  `json:"from"`
+				To       string  `json:"to"`
+				Forecast float64 `json:"forecast"`
+				Index    string  `json:"index"`
+			} `json:"schedule"`
+		} `json:"forecast"`
+		Diagnostics map[string]float64 `json:"diagnostics"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&remote); err != nil {
 		log.Error(err, "Failed to decode traffic schedule response")
@@ -88,23 +137,60 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// 3) Create the status for the TrafficSchedule CR
-	status := schedulingv1alpha1.TrafficScheduleStatus{
-		DirectWeight:       int(remote.DirectWeight),
-		QueueWeight:        int(remote.QueueWeight),
-		ConsumptionEnabled: remote.ConsumptionEnabled,
+	var diagnostics map[string]string
+	if len(remote.Diagnostics) > 0 {
+		diagnostics = make(map[string]string, len(remote.Diagnostics))
+		for key, value := range remote.Diagnostics {
+			diagnostics[key] = formatFloat(value)
+		}
 	}
-	for flavour, w := range remote.FlavourWeights {
-		dl := remote.Deadlines[flavour]
+
+	status := schedulingv1alpha1.TrafficScheduleStatus{
+		ActivePolicy:       remote.Policy.Name,
+		CreditBalance:      formatFloat(remote.Credits.Balance),
+		CreditVelocity:     formatFloat(remote.Credits.Velocity),
+		CreditTarget:       formatFloat(remote.Credits.Target),
+		CreditMin:          formatFloat(remote.Credits.Min),
+		CreditMax:          formatFloat(remote.Credits.Max),
+		CarbonIndex:        remote.Forecast.Index,
+		CarbonForecastNow:  formatFloat(remote.Forecast.Now),
+		CarbonForecastNext: formatFloat(remote.Forecast.Next),
+		Diagnostics:        diagnostics,
+	}
+	if remote.Processing.Throttle > 0 {
+		status.ProcessingThrottle = formatFloat(remote.Processing.Throttle)
+	}
+	if len(remote.Processing.Ceilings) > 0 {
+		status.EffectiveReplicaCeilings = remote.Processing.Ceilings
+	}
+	for _, slot := range remote.Forecast.Schedule {
+		status.ForecastSchedule = append(status.ForecastSchedule, schedulingv1alpha1.ForecastSlot{
+			From:     slot.From,
+			To:       slot.To,
+			Forecast: formatFloat(slot.Forecast),
+			Index:    slot.Index,
+		})
+	}
+	for _, strategy := range remote.Strategies {
+		status.Strategies = append(status.Strategies, schedulingv1alpha1.StrategyDecision{
+			Precision: strategy.Precision,
+			Weight:    strategy.Weight,
+		})
+	}
+	for _, rule := range remote.FlavourRules {
 		status.FlavourRules = append(status.FlavourRules, schedulingv1alpha1.FlavourRule{
-			FlavourName: flavour,
-			Weight:      int(w),
-			DeadlineSec: int(dl),
+			FlavourName: rule.FlavourName,
+			Weight:      rule.Weight,
+			DeadlineSec: rule.DeadlineSec,
 		})
 	}
 	if t, err := time.Parse(time.RFC3339, remote.ValidUntilISO); err == nil {
 		status.ValidUntil = metav1.NewTime(t)
 	}
 
+	sort.Slice(status.Strategies, func(i, j int) bool {
+		return status.Strategies[i].Precision < status.Strategies[j].Precision
+	})
 	sort.Slice(status.FlavourRules, func(i, j int) bool {
 		return status.FlavourRules[i].FlavourName < status.FlavourRules[j].FlavourName
 	})
@@ -150,4 +236,124 @@ func (r *TrafficScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&schedulingv1alpha1.TrafficSchedule{}, builder.WithPredicates(p)).
 		Complete(r)
+}
+
+func pushSchedulerConfig(namespace, name string, spec schedulingv1alpha1.TrafficScheduleSpec) error {
+	payload := buildSchedulerConfigPayload(spec)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/config/%s/%s", engineBaseURL, namespace, name)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("scheduler config rejected: %s", resp.Status)
+	}
+
+	return nil
+}
+
+func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec) map[string]interface{} {
+	cfg := map[string]interface{}{}
+	s := spec.Scheduler
+
+	assignFloat(cfg, "targetError", s.TargetError)
+	assignFloat(cfg, "creditMin", s.CreditMin)
+	assignFloat(cfg, "creditMax", s.CreditMax)
+	if s.CreditWindow != nil {
+		cfg["creditWindow"] = *s.CreditWindow
+	}
+	if s.Policy != nil {
+		cfg["policy"] = *s.Policy
+	}
+	if s.ValidFor != nil {
+		cfg["validFor"] = *s.ValidFor
+	}
+	if s.DiscoveryInterval != nil {
+		cfg["discoveryInterval"] = *s.DiscoveryInterval
+	}
+	if s.CarbonTarget != nil && *s.CarbonTarget != "" {
+		cfg["carbonTarget"] = *s.CarbonTarget
+	}
+	if s.CarbonTimeout != nil {
+		cfg["carbonTimeout"] = *s.CarbonTimeout
+	}
+	if s.CarbonCacheTTL != nil {
+		cfg["carbonCacheTTL"] = *s.CarbonCacheTTL
+	}
+
+	components := map[string]map[string]int32{}
+	if bounds := replicaBounds(spec.Router); bounds != nil {
+		components["router"] = bounds
+	}
+	if bounds := replicaBounds(spec.Consumer); bounds != nil {
+		components["consumer"] = bounds
+	}
+	if bounds := targetReplicaBounds(spec.Target); bounds != nil {
+		components["target"] = bounds
+	}
+	if len(components) > 0 {
+		cfg["components"] = components
+	}
+
+	return cfg
+}
+
+func formatFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func assignFloat(target map[string]interface{}, key string, value *string) {
+	if value == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return
+	}
+	if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		target[key] = parsed
+	}
+}
+
+func replicaBounds(component schedulingv1alpha1.ComponentConfig) map[string]int32 {
+	autoscaling := component.Autoscaling
+	bounds := map[string]int32{}
+	if autoscaling.MinReplicaCount != nil {
+		bounds["minReplicas"] = *autoscaling.MinReplicaCount
+	}
+	if autoscaling.MaxReplicaCount != nil {
+		bounds["maxReplicas"] = *autoscaling.MaxReplicaCount
+	}
+	if len(bounds) == 0 {
+		return nil
+	}
+	return bounds
+}
+
+func targetReplicaBounds(target schedulingv1alpha1.TargetConfig) map[string]int32 {
+	autoscaling := target.Autoscaling
+	bounds := map[string]int32{}
+	if autoscaling.MinReplicaCount != nil {
+		bounds["minReplicas"] = *autoscaling.MinReplicaCount
+	}
+	if autoscaling.MaxReplicaCount != nil {
+		bounds["maxReplicas"] = *autoscaling.MaxReplicaCount
+	}
+	if len(bounds) == 0 {
+		return nil
+	}
+	return bounds
 }

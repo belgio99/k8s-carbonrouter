@@ -1,4 +1,4 @@
-import base64, random, json, logging, os
+import base64, random, logging, os
 from typing import Dict
 
 loglevel = os.getenv("LOGLEVEL", "INFO").upper()
@@ -20,11 +20,19 @@ def weighted_choice(weights: Dict[str, int]) -> str:
 
 # Fallback schedule
 DEFAULT_SCHEDULE = {
-    "deadlines": {"high-power": 30, "mid-power": 120, "low-power": 600},
-    "directWeight": 80,
-    "queueWeight": 20,
-    "flavourWeights": {"high-power": 10, "mid-power": 20, "low-power": 70},
-    "consumption_enabled": 1,
+    "deadlines": {"high-power": 40, "mid-power": 120, "low-power": 300},
+    "flavourWeights": {"high-power": 60, "mid-power": 30, "low-power": 10},
+    "flavourRules": [
+        {"flavourName": "high-power", "weight": 60, "deadlineSec": 40},
+        {"flavourName": "mid-power", "weight": 30, "deadlineSec": 120},
+        {"flavourName": "low-power", "weight": 10, "deadlineSec": 300},
+    ],
+    "processing": {
+        "throttle": 1.0,
+        "creditsRatio": 1.0,
+        "intensityRatio": 1.0,
+        "ceilings": {},
+    },
     "validUntil": "2099-12-31T23:59:59Z",
 }
 

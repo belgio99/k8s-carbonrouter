@@ -22,7 +22,7 @@ import logging
 import os
 import signal
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Coroutine
 
 import aio_pika
 from aio_pika import ExchangeType
@@ -59,8 +59,6 @@ TARGET_BASE_URL: str = (
 
 TS_NAME: str = os.getenv("TS_NAME", "traffic-schedule")
 METRICS_PORT: int = int(os.getenv("METRICS_PORT", "8001"))
-
-FLAVOURS: tuple[str, ...] = ("high-power", "mid-power", "low-power")
 QUEUE_PREFIX: str = f"{TARGET_SVC_NAMESPACE}.{TARGET_SVC_NAME}"
 EXCHANGE_NAME: str = QUEUE_PREFIX
 
@@ -85,11 +83,6 @@ HTTP_FORWARD_COUNT = Counter(
     "Requests sent to the target service",
     ["status", "flavour"],
 )
-BUFFER_ENABLED = Gauge(
-    "consumer_buffer_enabled",
-    "1 when queue.* consumption is enabled, 0 otherwise",
-)
-
 MAX_RETRIES          = 5
 BACKOFF_FIRST_DELAY  = 1.0
 BACKOFF_FACTOR       = 2
@@ -101,10 +94,89 @@ RETRYABLE_EXC        = (
     httpx.PoolTimeout,
 )
 
+
+class FlavourWorkerManager:
+    """Maintains AMQP consumers for each discovered flavour."""
+
+    def __init__(
+        self,
+        schedule: TrafficScheduleManager,
+        listen_channel: aio_pika.Channel,
+        exchange: aio_pika.Exchange,
+        channel_pool: Pool,
+        http_client: httpx.AsyncClient,
+        poll_interval: int = 10,
+    ) -> None:
+        self._schedule = schedule
+        self._listen_channel = listen_channel
+        self._exchange = exchange
+        self._channel_pool = channel_pool
+        self._http_client = http_client
+        self._poll_interval = poll_interval
+        self._tasks: dict[str, list[asyncio.Task]] = {}
+        self._lock = asyncio.Lock()
+
+    async def sync_from_schedule(self) -> None:
+        flavours = set(await self._schedule.flavour_names())
+        await self._sync(flavours)
+
+    async def reconcile_loop(self) -> None:
+        while True:
+            try:
+                await self.sync_from_schedule()
+            except Exception as exc:  # noqa: BLE001
+                log.error("Failed to reconcile flavours: %s", exc)
+            await asyncio.sleep(self._poll_interval)
+
+    async def _sync(self, desired: set[str]) -> None:
+        async with self._lock:
+            current = set(self._tasks.keys())
+
+            for flavour in desired - current:
+                tasks = [
+                    self._create_task(
+                        flavour,
+                        consume_buffer_queue(
+                            self._listen_channel,
+                            self._exchange,
+                            flavour,
+                            self._channel_pool,
+                            self._http_client,
+                        ),
+                    )
+                ]
+                self._tasks[flavour] = tasks
+                log.info("Started consumers for flavour %s", flavour)
+
+            for flavour in current - desired:
+                for task in self._tasks.pop(flavour, []):
+                    task.cancel()
+                log.info("Stopped consumers for flavour %s", flavour)
+
+    def _create_task(
+        self, flavour: str, coro: Coroutine[Any, Any, None]
+    ) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t, name=flavour: self._on_task_done(name, t))
+        return task
+
+    def _on_task_done(self, flavour: str, task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:  # noqa: BLE001
+            log.error("Worker for flavour %s crashed: %s", flavour, exc)
+
 # ──────────────────────────────────────────────────────────────
 # FastAPI – only /metrics
 # ──────────────────────────────────────────────────────────────
 app = FastAPI(title="carbonrouter-consumer", docs_url=None, redoc_url=None)
+
+
+@app.get("/metrics")
+async def metrics_endpoint() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 async def send_with_retry(http_client: httpx.AsyncClient, **req_kw):
     """Send an HTTP request to target services with retry logic."""
@@ -185,58 +257,17 @@ async def forward_and_reply(
     return status_code, elapsed
 
 # ──────────────────────────────────────────────────────────────
-# Worker – real-time path (direct.*)
-# ──────────────────────────────────────────────────────────────
-async def consume_direct_queue(
-    listen_channel: aio_pika.Channel,
-    exchange: aio_pika.Exchange,
-    flavour: str,
-    channel_pool: Pool,
-    http_client: httpx.AsyncClient,
-) -> None:
-    """
-    Consume <prefix>.direct.<flavour> – always active.
-    Uses a Semaphore to handle many messages in parallel.
-    """
-    queue_name = f"{QUEUE_PREFIX}.direct.{flavour}"
-    queue = await listen_channel.declare_queue(queue_name, durable=True)
-
-    await queue.bind(
-        exchange,
-        arguments={"x-match": "all", "q_type": "direct", "flavour": flavour},
-    )
-    debug(f"Now listening direct: {queue_name}")
-
-    sem = asyncio.Semaphore(CONCURRENCY)
-
-    async def _on_message(message: aio_pika.IncomingMessage) -> None:
-        async with sem:
-            flav_hdr = message.headers.get("flavour", flavour)
-            status, dt_sec = await forward_and_reply(
-                message, flav_hdr, channel_pool, http_client
-            )
-            MSG_CONSUMED.labels("direct", flav_hdr).inc()
-            HTTP_FORWARD_COUNT.labels(str(status), flav_hdr).inc()
-            HTTP_FORWARD_LAT.labels(flav_hdr).observe(dt_sec)
-
-    await queue.consume(_on_message, no_ack=False)
-    await asyncio.Event().wait()  # keep task alive forever
-
-
-# ──────────────────────────────────────────────────────────────
 # Worker – buffer path (queue.*)  pausable via TrafficSchedule
 # ──────────────────────────────────────────────────────────────
 async def consume_buffer_queue(
     listen_channel: aio_pika.Channel,
     exchange: aio_pika.Exchange,
     flavour: str,
-    schedule: TrafficScheduleManager,
     channel_pool: Pool,
     http_client: httpx.AsyncClient,
 ) -> None:
     """
-    Consume <prefix>.queue.<flavour>.
-    When buffers are disabled we cancel the consumer (messages stay queued).
+    Consume <prefix>.queue.<flavour> continuously.
     """
     queue_name = f"{QUEUE_PREFIX}.queue.{flavour}"
     queue = await listen_channel.declare_queue(queue_name, durable=True)
@@ -246,16 +277,10 @@ async def consume_buffer_queue(
     )
     debug(f"Queue declared once: {queue_name}")
 
-    consumer_tag: str | None = None
     sem = asyncio.Semaphore(CONCURRENCY)
 
     async def _on_message(message: aio_pika.IncomingMessage) -> None:
         async with sem:
-            # If flag flips mid-stream → requeue and exit early
-            if not schedule.consumption_enabled:
-                await message.nack(requeue=True)
-                return
-
             flav_hdr = message.headers.get("flavour", flavour)
             status, dt_sec = await forward_and_reply(
                 message, flav_hdr, channel_pool, http_client
@@ -264,21 +289,8 @@ async def consume_buffer_queue(
             HTTP_FORWARD_COUNT.labels(str(status), flav_hdr).inc()
             HTTP_FORWARD_LAT.labels(flav_hdr).observe(dt_sec)
 
-    # Loop that toggles the consumer on/off according to schedule
-    while True:
-        if schedule.consumption_enabled and consumer_tag is None:
-            consumer_tag = await queue.consume(_on_message, no_ack=False)
-            BUFFER_ENABLED.set(1)
-            log.info("Buffer enabled – consuming %s", queue_name)
-
-        elif not schedule.consumption_enabled and consumer_tag is not None:
-            await queue.cancel(consumer_tag)
-            consumer_tag = None
-            BUFFER_ENABLED.set(0)
-            log.info("Buffer disabled – paused %s", queue_name)
-
-        # Small sleep to avoid busy-loop
-        await asyncio.sleep(1)
+    await queue.consume(_on_message, no_ack=False)
+    await asyncio.Event().wait()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -293,7 +305,7 @@ async def main() -> None:
     print(f"Prometheus metrics available at /metrics, port {METRICS_PORT}")
     # TrafficSchedule manager (background task)
     schedule_mgr = TrafficScheduleManager(TS_NAME)
-    asyncio.create_task(schedule_mgr.load_once())
+    await schedule_mgr.load_once()
     asyncio.create_task(schedule_mgr.watch_forever())
     asyncio.create_task(schedule_mgr.expiry_guard())
 
@@ -326,18 +338,16 @@ async def main() -> None:
         timeout=httpx.Timeout(10.0),
     )
 
-    # Spawn workers
-    for flav in FLAVOURS:
-        asyncio.create_task(
-            consume_direct_queue(
-                listen_channel, exchange, flav, channel_pool, http_client
-            )
-        )
-        asyncio.create_task(
-            consume_buffer_queue(
-                listen_channel, exchange, flav, schedule_mgr, channel_pool, http_client
-            )
-        )
+    # Spawn workers per flavour
+    flavour_manager = FlavourWorkerManager(
+        schedule_mgr,
+        listen_channel,
+        exchange,
+        channel_pool,
+        http_client,
+    )
+    await flavour_manager.sync_from_schedule()
+    asyncio.create_task(flavour_manager.reconcile_loop())
 
     # FastAPI (only /metrics) – no lifespan
     config = uvicorn.Config(app, host="0.0.0.0", port=8000, lifespan="off", log_level="info")

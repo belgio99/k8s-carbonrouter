@@ -161,26 +161,42 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         forced_flavour = request.headers.get("x-carbonrouter")
 
         flavour_weights = {
-            r["flavourName"]: r["weight"] for r in schedule.get("flavourRules", [])
+            str(r.get("flavourName")): int(r.get("weight", 0))
+            for r in schedule.get("flavourRules", [])
+            if r.get("flavourName")
         }
         flavour_deadlines = {
-            r["flavourName"]: r.get("deadlineSec", 60)
+            str(r.get("flavourName")): int(r.get("deadlineSec", 60))
             for r in schedule.get("flavourRules", [])
+            if r.get("flavourName")
         }
+        if not flavour_weights:
+            flavour_weights = {
+                str(r.get("flavourName")): int(r.get("weight", 0))
+                for r in DEFAULT_SCHEDULE.get("flavourRules", [])
+                if r.get("flavourName")
+            }
+            flavour_deadlines = {
+                str(r.get("flavourName")): int(r.get("deadlineSec", 60))
+                for r in DEFAULT_SCHEDULE.get("flavourRules", [])
+                if r.get("flavourName")
+            }
 
         headers: Dict[str, str] = dict(request.headers)
+        if urgent:
+            headers["x-carbonrouter-urgent"] = "true"
 
-        q_type = (
-            "direct"
-            if urgent
-            else weighted_choice(
-                {"direct": schedule["directWeight"], "queue": schedule["queueWeight"]}
-            )
-        )
+        candidate_weights = {k: v for k, v in flavour_weights.items() if v > 0}
+        if not candidate_weights:
+            candidate_weights = {k: 1 for k in flavour_weights.keys()} or {"default": 1}
 
-        flavour = forced_flavour or weighted_choice(flavour_weights)
+        if forced_flavour and forced_flavour in candidate_weights:
+            flavour = forced_flavour
+        else:
+            flavour = forced_flavour or weighted_choice(candidate_weights)
+        q_type = "queue"
         debug(
-            f"Selected routing: q_type={q_type}, flavour={flavour}, forced={bool(forced_flavour)}"
+            f"Selected routing: q_type={q_type}, flavour={flavour}, forced={bool(forced_flavour)}, urgent={urgent}"
         )
         deadline_sec = flavour_deadlines.get(flavour, 60)
         expiration_ms = int(deadline_sec * 1000)
@@ -233,13 +249,13 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         # ─── wait for RPC response ───
         try:
             rabbit_msg = await asyncio.wait_for(response_future, timeout=deadline_sec)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             rabbit_state["pending"].pop(correlation_id, None)
             HTTP_LATENCY.labels(q_type, flavour).observe(time.perf_counter() - start_ts)
             HTTP_REQUESTS.labels(
                 request.method, "504", q_type, flavour, bool(forced_flavour)
             ).inc()
-            raise HTTPException(status_code=504, detail="Upstream timeout")
+            raise HTTPException(status_code=504, detail="Upstream timeout") from exc
 
         response_data = json.loads(rabbit_msg.body)
 

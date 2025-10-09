@@ -44,6 +44,30 @@ type ComponentConfig struct {
 	Debug bool `json:"debug,omitempty"`
 }
 
+// SchedulerConfigSpec defines runtime tuning knobs for the credit scheduler.
+type SchedulerConfigSpec struct {
+	// +optional
+	TargetError *string `json:"targetError,omitempty"`
+	// +optional
+	CreditMin *string `json:"creditMin,omitempty"`
+	// +optional
+	CreditMax *string `json:"creditMax,omitempty"`
+	// +optional
+	CreditWindow *int32 `json:"creditWindow,omitempty"`
+	// +optional
+	Policy *string `json:"policy,omitempty"`
+	// +optional
+	ValidFor *int32 `json:"validFor,omitempty"`
+	// +optional
+	DiscoveryInterval *int32 `json:"discoveryInterval,omitempty"`
+	// +optional
+	CarbonTarget *string `json:"carbonTarget,omitempty"`
+	// +optional
+	CarbonTimeout *int32 `json:"carbonTimeout,omitempty"`
+	// +optional
+	CarbonCacheTTL *int32 `json:"carbonCacheTTL,omitempty"`
+}
+
 // TargetConfig defines the configuration for the target deployments.
 type TargetConfig struct {
 	// +optional
@@ -61,36 +85,73 @@ type TrafficScheduleSpec struct {
 	Router ComponentConfig `json:"router,omitempty"`
 	// +optional
 	Consumer ComponentConfig `json:"consumer,omitempty"`
+	// +optional
+	Scheduler SchedulerConfigSpec `json:"scheduler,omitempty"`
 }
 
-// FlavourRule defines the rules for a specific flavour.
+// StrategyDecision describes the scheduler outcome for a specific precision level.
+type StrategyDecision struct {
+	// Precision is expressed as an integer percentage (e.g. 100, 85, 60).
+	Precision int `json:"precision"`
+	// Weight represents the share of traffic (percentage) assigned to this precision.
+	Weight int `json:"weight"`
+}
+
+// FlavourRule describes routing weights for router consumers.
 type FlavourRule struct {
 	FlavourName string `json:"flavourName"`
-	// Weight: how much of the traffic should be scheduled to this flavour (percentage)
-	Weight int `json:"weight"`
-	// DeadlineSec: max delay in seconds
-	DeadlineSec int `json:"deadlineSec"`
+	Weight      int    `json:"weight"`
+	DeadlineSec int    `json:"deadlineSec"`
 }
 
 // TrafficScheduleStatus defines the observed state of TrafficSchedule.
 type TrafficScheduleStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	FlavourRules []FlavourRule `json:"flavourRules"`
-	// DirectWeight: how much of the traffic should be scheduled directly to the application (percentage)
-	DirectWeight int `json:"directWeight"`
-	// QueueWeight: how much of the traffic should be scheduled to the queue (percentage)
-	QueueWeight int `json:"queueWeight"`
-	// ConsumptionEnabled: whether the traffic consumption is enabled
-	ConsumptionEnabled bool `json:"consumptionEnabled"`
-	// ValidUntil: when the schedule is valid
+	// Strategies contains the routing weights for each known precision level.
+	Strategies []StrategyDecision `json:"strategies"`
+	// FlavourRules provides backward-compatible data for router components.
+	FlavourRules []FlavourRule `json:"flavourRules,omitempty"`
+	// ActivePolicy indicates the policy currently selected by the decision engine.
+	ActivePolicy string `json:"activePolicy"`
+	// ValidUntil specifies when the schedule should be refreshed.
 	ValidUntil metav1.Time `json:"validUntil"`
+	// CreditBalance exposes the current credit balance maintained by the scheduler.
+	CreditBalance string `json:"creditBalance,omitempty"`
+	// CreditVelocity represents the average rate of change of the credit balance.
+	CreditVelocity string `json:"creditVelocity,omitempty"`
+	// CreditTarget denotes the configured precision error target.
+	CreditTarget string `json:"creditTarget,omitempty"`
+	// CreditMin exposes the lower bound applied to the credit ledger.
+	CreditMin string `json:"creditMin,omitempty"`
+	// CreditMax exposes the upper bound applied to the credit ledger.
+	CreditMax string `json:"creditMax,omitempty"`
+	// ProcessingThrottle exports the throttle factor applied to downstream autoscaling.
+	ProcessingThrottle string `json:"processingThrottle,omitempty"`
+	// EffectiveReplicaCeilings exposes throttled replica limits keyed by component name.
+	EffectiveReplicaCeilings map[string]int32 `json:"effectiveReplicaCeilings,omitempty"`
+	// CarbonIndex reflects the current qualitative carbon intensity label.
+	CarbonIndex string `json:"carbonIndex,omitempty"`
+	// CarbonForecastNow is the current slot forecast in gCO2/kWh.
+	CarbonForecastNow string `json:"carbonForecastNow,omitempty"`
+	// CarbonForecastNext is the next slot forecast in gCO2/kWh.
+	CarbonForecastNext string `json:"carbonForecastNext,omitempty"`
+	// ForecastSchedule summarises the upcoming half-hour slots as reported by the provider.
+	ForecastSchedule []ForecastSlot `json:"forecastSchedule,omitempty"`
+	// Diagnostics contains policy-specific telemetry useful for debugging.
+	Diagnostics map[string]string `json:"diagnostics,omitempty"`
+}
+
+// ForecastSlot describes a single carbon forecast interval.
+type ForecastSlot struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Forecast string `json:"forecast"`
+	// +optional
+	Index string `json:"index,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
 
 // TrafficSchedule is the Schema for the trafficschedules API.
 type TrafficSchedule struct {

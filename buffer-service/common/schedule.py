@@ -44,6 +44,18 @@ class TrafficScheduleManager:
         async with self._lock:
             return self._current.copy()
 
+    async def flavour_names(self) -> list[str]:
+        """Return the list of flavour names currently defined in the schedule."""
+
+        async with self._lock:
+            rules = self._current.get("flavourRules", []) or []
+        result: list[str] = []
+        for rule in rules:
+            name = rule.get("flavourName")
+            if isinstance(name, str):
+                result.append(name)
+        return result
+
     async def load_once(self) -> None:
         obj = await self._api.get_cluster_custom_object(
             group="scheduling.carbonrouter.io",
@@ -82,19 +94,11 @@ class TrafficScheduleManager:
             try:
                 expiry_dt = date_parser.isoparse(valid_until)
                 sleep_s = max((expiry_dt - dt.datetime.utcnow()).total_seconds(), 0)
-            except Exception:
+            except (TypeError, ValueError):
                 sleep_s = 60
             await asyncio.sleep(sleep_s + 1)
             await self.load_once()
     
-    @property
-    def consumption_enabled(self) -> bool:
-        """
-        True → consume queue.*,
-        False → consumer sleeps
-        """
-        return bool(self._current.get("consumption_enabled", 1))
-
     def seconds_to_expiry(self) -> float:
         """
         Returns the number of seconds until the schedule expires.
@@ -103,7 +107,7 @@ class TrafficScheduleManager:
         try:
             expiry_dt = date_parser.isoparse(valid_until)
             return max((expiry_dt - dt.datetime.utcnow()).total_seconds(), 0)
-        except Exception:
+        except (TypeError, ValueError):
             return 0.0
         
     async def close(self) -> None:

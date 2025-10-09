@@ -4,8 +4,8 @@ package controller
 import (
 	"context"
 	"fmt"
-
-	//"strconv"
+	"sort"
+	"strconv"
 	"time"
 
 	//appsv1 "k8s.io/api/apps/v1"
@@ -37,16 +37,100 @@ import (
 
 /* ─────────────────────────────────────────  Constants  ───────────────────────────────────────── */
 const (
-	carbonLabel            = "carbonrouter"                   // high|mid|low
-	enableLabel            = "carbonrouter/enabled"           // opt-in
-	origReplicasAnnotation = "carbonrouter/original-replicas" // remember replicas
+	precisionLabel         = "carbonstat.precision"
+	parentServiceLabel     = "carbonrouter/parent-service"
+	enableLabel            = "carbonrouter/enabled"
+	origReplicasAnnotation = "carbonrouter/original-replicas"
 	defaultRequeue         = 30 * time.Second
 )
 
-var (
-	flavours       = []string{"high-power", "mid-power", "low-power"}
-	queueSvcSuffix = "-queue" // queue Service name <svc>-queue
-)
+func collectPrecisions(strategies []schedulingv1alpha1.StrategyDecision) []int {
+	uniq := make(map[int]struct{})
+	for _, strategy := range strategies {
+		if strategy.Precision > 0 {
+			uniq[strategy.Precision] = struct{}{}
+		}
+	}
+	if len(uniq) == 0 {
+		return nil
+	}
+	values := make([]int, 0, len(uniq))
+	for value := range uniq {
+		values = append(values, value)
+	}
+	sort.Ints(values)
+	return values
+}
+
+func precisionSubsetName(precision int) string {
+	return fmt.Sprintf("precision-%d", precision)
+}
+
+func precisionHeaderValue(precision int) string {
+	return fmt.Sprintf("%d", precision)
+}
+
+func precisionQueueSuffix(precision int) string {
+	return precisionSubsetName(precision)
+}
+
+func directQueueName(namespace, service string, precision int) string {
+	return fmt.Sprintf("%s.%s.direct.%s", namespace, service, precisionQueueSuffix(precision))
+}
+
+func bufferedQueueName(namespace, service string, precision int) string {
+	return fmt.Sprintf("%s.%s.queue.%s", namespace, service, precisionQueueSuffix(precision))
+}
+
+func buildSubsets(precisions []int) []*networkingapi.Subset {
+	subsets := make([]*networkingapi.Subset, 0, len(precisions))
+	for _, precision := range precisions {
+		subsets = append(subsets, &networkingapi.Subset{
+			Name:   precisionSubsetName(precision),
+			Labels: map[string]string{precisionLabel: precisionHeaderValue(precision)},
+		})
+	}
+	return subsets
+}
+
+func (r *FlavourRouterReconciler) discoverStrategyDeployments(ctx context.Context, svc *corev1.Service) (map[int]string, error) {
+	var deployments appsv1.DeploymentList
+	if err := r.List(ctx, &deployments, client.InNamespace(svc.Namespace), client.MatchingLabels{parentServiceLabel: svc.Name}); err != nil {
+		return nil, err
+	}
+	result := make(map[int]string)
+	for _, dep := range deployments.Items {
+		labelValue := dep.Labels[precisionLabel]
+		if labelValue == "" {
+			continue
+		}
+		precision, err := strconv.Atoi(labelValue)
+		if err != nil {
+			ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]").Info("Skipping deployment with invalid precision label", "deployment", dep.Name, "value", labelValue)
+			continue
+		}
+		if _, exists := result[precision]; exists {
+			ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]").Info("Multiple deployments found for precision, keeping first", "precision", precision, "existing", result[precision], "ignored", dep.Name)
+			continue
+		}
+		result[precision] = dep.Name
+	}
+	return result, nil
+}
+
+func (r *FlavourRouterReconciler) precisionScaledObjectNames(ctx context.Context, svc *corev1.Service) []string {
+	var soList kedav1alpha1.ScaledObjectList
+	if err := r.List(ctx, &soList, client.InNamespace(svc.Namespace), client.MatchingLabels{parentServiceLabel: svc.Name}); err != nil {
+		ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]").Error(err, "Failed to list scaled objects for cleanup")
+		return nil
+	}
+	names := make([]string, 0)
+	for _, so := range soList.Items {
+		names = append(names, so.Name)
+	}
+	sort.Strings(names)
+	return names
+}
 
 /* ─────────────────────────────────────── Reconciler  ────────────────────────────────────────── */
 
@@ -82,15 +166,36 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// 2. Get the TrafficSchedule CR from the cluster
 	var tsList schedulingv1alpha1.TrafficScheduleList
-	if err := r.List(ctx, &tsList); err != nil {
+	if err := r.List(ctx, &tsList, client.InNamespace(svc.Namespace)); err != nil {
 		return ctrl.Result{}, err
 	}
 	if len(tsList.Items) == 0 {
 		log.Info("No TrafficSchedule – requeue") // if no TrafficSchedule is found, requeue
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
-	tsSpec := tsList.Items[0].Spec
-	trafficschedule := tsList.Items[0].Status
+	ts := tsList.Items[0]
+	tsSpec := ts.Spec
+	trafficschedule := ts.Status
+	precisionList := collectPrecisions(trafficschedule.Strategies)
+
+	deploymentsByPrecision, err := r.discoverStrategyDeployments(ctx, &svc)
+	if err != nil {
+		log.Error(err, "Failed to discover strategy deployments")
+		return ctrl.Result{}, err
+	}
+
+	activePrecisions := make([]int, 0, len(precisionList))
+	for _, precision := range precisionList {
+		if _, ok := deploymentsByPrecision[precision]; ok {
+			activePrecisions = append(activePrecisions, precision)
+		} else {
+			log.Info("Skipping precision without backing deployment", "precision", precision)
+		}
+	}
+	if len(activePrecisions) == 0 {
+		log.Info("No precision strategies available with backing deployments – requeue")
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
 
 	// 4. Create or update all necessary resources
 	if err := r.ensureServiceAccount(ctx, &svc); err != nil {
@@ -121,21 +226,22 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ensureConsumerScaledObject(ctx, &svc, tsSpec.Consumer.Autoscaling); err != nil {
+	if err := r.ensureConsumerScaledObject(ctx, &svc, tsSpec.Consumer.Autoscaling, activePrecisions); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	for _, flavour := range flavours {
-		if err := r.ensureFlavourScaledObject(ctx, &svc, flavour, tsSpec.Target.Autoscaling); err != nil {
+	for _, precision := range activePrecisions {
+		targetName := deploymentsByPrecision[precision]
+		if err := r.ensurePrecisionScaledObject(ctx, &svc, precision, targetName, tsSpec.Target.Autoscaling); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	if err := r.ensureDR(ctx, &svc); err != nil {
+	if err := r.ensureDR(ctx, &svc, activePrecisions); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ensureVS(ctx, &svc); err != nil {
+	if err := r.ensureVS(ctx, &svc, activePrecisions); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -151,7 +257,7 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *FlavourRouterReconciler) ensureDR(ctx context.Context, svc *corev1.Service) error {
+func (r *FlavourRouterReconciler) ensureDR(ctx context.Context, svc *corev1.Service, precisions []int) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	log.Info("Ensuring DestinationRule for service", "service", svc.Name)
 	name := fmt.Sprintf("%s-carbonrouter-dr", svc.Name)
@@ -160,12 +266,8 @@ func (r *FlavourRouterReconciler) ensureDR(ctx context.Context, svc *corev1.Serv
 	newDR := networkingkube.DestinationRule{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace},
 		Spec: networkingapi.DestinationRule{
-			Host: host,
-			Subsets: []*networkingapi.Subset{
-				{Name: "high-power", Labels: map[string]string{carbonLabel: "high"}},
-				{Name: "mid-power", Labels: map[string]string{carbonLabel: "mid"}},
-				{Name: "low-power", Labels: map[string]string{carbonLabel: "low"}},
-			},
+			Host:    host,
+			Subsets: buildSubsets(precisions),
 		},
 	}
 	if err := ctrl.SetControllerReference(svc, &newDR, r.Scheme); err != nil {
@@ -187,7 +289,7 @@ func (r *FlavourRouterReconciler) ensureDR(ctx context.Context, svc *corev1.Serv
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensureVS(ctx context.Context, svc *corev1.Service) error {
+func (r *FlavourRouterReconciler) ensureVS(ctx context.Context, svc *corev1.Service, precisions []int) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	name := fmt.Sprintf("%s-carbonrouter-vs", svc.Name)
 	host := fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace)
@@ -195,21 +297,18 @@ func (r *FlavourRouterReconciler) ensureVS(ctx context.Context, svc *corev1.Serv
 
 	log.Info("Ensuring Flavour VirtualService for service", "service", svc.Name)
 
-	matches := []struct{ val, subset string }{
-		{"high-power", "high-power"}, {"mid-power", "mid-power"}, {"low-power", "low-power"},
-	}
-
 	var httpRoutes []*networkingapi.HTTPRoute
-	// Traffic "forced" to go to a specific flavour
-	for _, m := range matches {
+	// Traffic forced to go to a specific precision subset
+	for _, precision := range precisions {
+		subsetName := precisionSubsetName(precision)
 		httpRoutes = append(httpRoutes, &networkingapi.HTTPRoute{
 			Match: []*networkingapi.HTTPMatchRequest{{
 				Headers: map[string]*networkingapi.StringMatch{
-					"x-carbonrouter": {MatchType: &networkingapi.StringMatch_Exact{Exact: m.val}},
+					"x-carbonrouter": {MatchType: &networkingapi.StringMatch_Exact{Exact: precisionHeaderValue(precision)}},
 				},
 			}},
 			Route: []*networkingapi.HTTPRouteDestination{{
-				Destination: &networkingapi.Destination{Host: host, Subset: m.subset},
+				Destination: &networkingapi.Destination{Host: host, Subset: subsetName},
 				Weight:      100,
 			}},
 		})
@@ -301,12 +400,20 @@ func (r *FlavourRouterReconciler) cleanupResources(ctx context.Context, svc *cor
 		log.Error(err, "Failed to delete DestinationRule")
 	}
 
-	// Delete ScaledObjects
-	for _, flavour := range flavours {
+	// Delete ScaledObjects (precision-based)
+	precisionScaledObjects := r.precisionScaledObjectNames(ctx, svc)
+	for _, soName := range precisionScaledObjects {
+		so := &kedav1alpha1.ScaledObject{ObjectMeta: metav1.ObjectMeta{Name: soName, Namespace: svc.Namespace}}
+		if err := r.Delete(ctx, so, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Failed to delete precision ScaledObject", "ScaledObject", soName)
+		}
+	}
+	// Delete legacy flavour ScaledObjects if still present
+	for _, flavour := range []string{"high-power", "mid-power", "low-power"} {
 		soName := fmt.Sprintf("%s-%s", svc.Name, flavour)
 		so := &kedav1alpha1.ScaledObject{ObjectMeta: metav1.ObjectMeta{Name: soName, Namespace: svc.Namespace}}
 		if err := r.Delete(ctx, so, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
-			log.Error(err, "Failed to delete flavour ScaledObject", "ScaledObject", soName)
+			log.Error(err, "Failed to delete legacy flavour ScaledObject", "ScaledObject", soName)
 		}
 	}
 	consumerSoName := fmt.Sprintf("buffer-service-consumer-%s", svc.Name)
@@ -617,6 +724,9 @@ func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      soName,
 			Namespace: svc.Namespace,
+			Labels: map[string]string{
+				parentServiceLabel: svc.Name,
+			},
 		},
 		Spec: kedav1alpha1.ScaledObjectSpec{
 			ScaleTargetRef:  &kedav1alpha1.ScaleTarget{Name: targetName},
@@ -659,15 +769,33 @@ func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, 
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context, svc *corev1.Service, autoscaling schedulingv1alpha1.AutoscalingConfig) error {
+func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context, svc *corev1.Service, autoscaling schedulingv1alpha1.AutoscalingConfig, precisions []int) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	soName := fmt.Sprintf("buffer-service-consumer-%s", svc.Name)
 	targetName := fmt.Sprintf("buffer-service-consumer-%s", svc.Name)
+
+	rabbitmqTriggers := make([]kedav1alpha1.ScaleTriggers, 0, len(precisions))
+	for _, precision := range precisions {
+		rabbitmqTriggers = append(rabbitmqTriggers, kedav1alpha1.ScaleTriggers{
+			Type:              "rabbitmq",
+			AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
+			Metadata: map[string]string{
+				"queueName": directQueueName(svc.Namespace, svc.Name, precision),
+				"mode":      "QueueLength",
+				"value":     "1000000",
+			},
+		})
+	}
+
+	queueRegex := fmt.Sprintf(`^%s\\.%s\\.queue\\.precision-`, svc.Namespace, svc.Name)
 
 	so := &kedav1alpha1.ScaledObject{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      soName,
 			Namespace: svc.Namespace,
+			Labels: map[string]string{
+				parentServiceLabel: svc.Name,
+			},
 		},
 		Spec: kedav1alpha1.ScaledObjectSpec{
 			ScaleTargetRef:  &kedav1alpha1.ScaleTarget{Name: targetName},
@@ -675,30 +803,15 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 			CooldownPeriod:  autoscaling.CooldownPeriod,
 			MinReplicaCount: autoscaling.MinReplicaCount,
 			MaxReplicaCount: autoscaling.MaxReplicaCount,
-			Triggers: []kedav1alpha1.ScaleTriggers{
-				{
-					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
-					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.low-power", svc.Namespace, svc.Name), "mode": "QueueLength", "value": "1000000"},
-				},
-				{
-					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
-					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.mid-power", svc.Namespace, svc.Name), "mode": "QueueLength", "value": "1000000"},
-				},
-				{
-					Type:              "rabbitmq",
-					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
-					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.high-power", svc.Namespace, svc.Name), "mode": "QueueLength", "value": "1000000"},
-				},
-				{
+			Triggers: append(rabbitmqTriggers,
+				kedav1alpha1.ScaleTriggers{
 					Type: "cpu",
 					Metadata: map[string]string{
 						"type":  "Utilization",
 						"value": fmt.Sprintf("%d", *autoscaling.CPUUtilization),
 					},
 				},
-				{
+				kedav1alpha1.ScaleTriggers{
 					Type: "prometheus",
 					Metadata: map[string]string{
 						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
@@ -707,15 +820,15 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 						"activationThreshold": "1",
 					},
 				},
-				{
+				kedav1alpha1.ScaleTriggers{
 					Type: "prometheus",
 					Metadata: map[string]string{
 						"serverAddress": "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
-						"query":         fmt.Sprintf(`sum(rabbitmq_queue_messages_ready{queue=~"^%s\\.%s\\.queue\\..+"}) * max(schedule_consumption_enabled)`, svc.Namespace, svc.Name),
+						"query":         fmt.Sprintf(`sum(rabbitmq_queue_messages_ready{queue=~"%s.+"})`, queueRegex),
 						"threshold":     "1",
 					},
 				},
-			},
+			),
 		},
 	}
 
@@ -742,18 +855,23 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context, svc *corev1.Service, flavour string, autoscaling schedulingv1alpha1.AutoscalingConfig) error {
+func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Context, svc *corev1.Service, precision int, targetName string, autoscaling schedulingv1alpha1.AutoscalingConfig) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
-	// flavour is "high-power", "mid-power", or "low-power"
-	// The target deployment is named like "carbonstat-low-power"
-	soName := fmt.Sprintf("%s-%s", svc.Name, flavour)
-	targetName := fmt.Sprintf("%s-%s", svc.Name, flavour)
-	queueFlavour := flavour // e.g. low-power
+	if targetName == "" {
+		return fmt.Errorf("missing deployment name for precision %d", precision)
+	}
+
+	soName := fmt.Sprintf("%s-precision-%d", svc.Name, precision)
+	directQueue := directQueueName(svc.Namespace, svc.Name, precision)
+	bufferedQueue := bufferedQueueName(svc.Namespace, svc.Name, precision)
 
 	so := &kedav1alpha1.ScaledObject{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      soName,
 			Namespace: svc.Namespace,
+			Labels: map[string]string{
+				parentServiceLabel: svc.Name,
+			},
 		},
 		Spec: kedav1alpha1.ScaledObjectSpec{
 			ScaleTargetRef:  &kedav1alpha1.ScaleTarget{Name: targetName},
@@ -766,7 +884,7 @@ func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context,
 					Type: "prometheus",
 					Metadata: map[string]string{
 						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
-						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_queue_messages_ready{queue="%s.%s.queue.%s"}[30s])) * max(schedule_consumption_enabled)`, svc.Namespace, svc.Name, queueFlavour),
+						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_queue_messages_ready{queue="%s"}[30s]))`, bufferedQueue),
 						"threshold":           "1000000",
 						"activationThreshold": "1",
 					},
@@ -774,7 +892,11 @@ func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context,
 				{
 					Type:              "rabbitmq",
 					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
-					Metadata:          map[string]string{"queueName": fmt.Sprintf("%s.%s.direct.%s", svc.Namespace, svc.Name, queueFlavour), "mode": "QueueLength", "value": "1000000"},
+					Metadata: map[string]string{
+						"queueName": directQueue,
+						"mode":      "QueueLength",
+						"value":     "1000000",
+					},
 				},
 				{
 					Type: "cpu",
@@ -795,7 +917,7 @@ func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context,
 	err := r.Get(ctx, client.ObjectKey{Name: soName, Namespace: svc.Namespace}, &currentSO)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("Creating Flavour ScaledObject", "ScaledObject", so.Name)
+			log.Info("Creating Precision ScaledObject", "ScaledObject", so.Name)
 			return r.Create(ctx, so)
 		}
 		return err
@@ -803,7 +925,7 @@ func (r *FlavourRouterReconciler) ensureFlavourScaledObject(ctx context.Context,
 
 	if !equality.Semantic.DeepEqual(currentSO.Spec, so.Spec) {
 		currentSO.Spec = so.Spec
-		log.Info("Updating Flavour ScaledObject", "ScaledObject", so.Name)
+		log.Info("Updating Precision ScaledObject", "ScaledObject", so.Name)
 		return r.Update(ctx, &currentSO)
 	}
 

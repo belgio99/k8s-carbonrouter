@@ -1,0 +1,315 @@
+"""Scheduler engine orchestrating policies, ledger, and forecasts."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import threading
+import time
+from datetime import datetime
+from typing import Dict, Iterable, List, Mapping, Optional
+
+from prometheus_client import Counter, Gauge
+
+from .discovery import ConfigException, KubeStrategyDiscoverer, merge_strategies
+from .ledger import CreditLedger
+from .models import (
+    ForecastSnapshot,
+    PolicyResult,
+    ScheduleDecision,
+    SchedulerConfig,
+    ScalingDirective,
+    StrategyProfile,
+)
+from .policies import CreditGreedyPolicy, ForecastAwarePolicy, PrecisionTierPolicy, SchedulerPolicy
+from .providers import CarbonForecastProvider, DemandEstimator, ForecastManager
+
+_LOGGER = logging.getLogger("scheduler")
+
+
+class StrategyRegistry:
+    """In-memory registry of available strategies."""
+
+    def __init__(self, strategies: Iterable[StrategyProfile] | None = None) -> None:
+        self._lock = threading.Lock()
+        self._strategies: Dict[str, StrategyProfile] = {}
+        if strategies:
+            for strategy in strategies:
+                self._strategies[strategy.name] = strategy
+
+    def list(self) -> List[StrategyProfile]:
+        with self._lock:
+            return list(self._strategies.values())
+
+    def replace(self, strategies: Iterable[StrategyProfile]) -> None:
+        with self._lock:
+            self._strategies = {s.name: s for s in strategies}
+
+    def upsert(self, strategy: StrategyProfile) -> None:
+        with self._lock:
+            self._strategies[strategy.name] = strategy
+
+
+_POLICY_BUILDERS: Dict[str, type[SchedulerPolicy]] = {
+    "credit-greedy": CreditGreedyPolicy,
+    "forecast-aware": ForecastAwarePolicy,
+    "precision-tier": PrecisionTierPolicy,
+}
+
+
+class SchedulerEngine:
+    """High-level orchestrator for the credit-based scheduler."""
+
+    def __init__(
+        self,
+        config: SchedulerConfig | None = None,
+        namespace: str = "default",
+        name: str = "default",
+        component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
+    ) -> None:
+        self.namespace = namespace
+        self.name = name
+        self.component_bounds: Dict[str, Dict[str, int]] = {}
+        if component_bounds:
+            for comp, bounds in component_bounds.items():
+                if not isinstance(bounds, Mapping):
+                    continue
+                entries: Dict[str, int] = {}
+                for key in ("min", "max"):
+                    if key not in bounds or bounds[key] is None:
+                        continue
+                    try:
+                        entries[key] = int(bounds[key])
+                    except (TypeError, ValueError):
+                        continue
+                if entries:
+                    self.component_bounds[comp] = entries
+        self.config = config or self._load_config()
+        self.ledger = CreditLedger(
+            target_error=self.config.target_error,
+            credit_min=self.config.credit_min,
+            credit_max=self.config.credit_max,
+            window_size=self.config.smoothing_window,
+        )
+        default_strategies = self._load_default_strategies()
+        self.registry = StrategyRegistry(default_strategies)
+        self._fallback_strategies = default_strategies
+        self.forecast_manager = ForecastManager(CarbonForecastProvider(), DemandEstimator())
+        self.policy = self._build_policy(self.config.policy_name)
+        self._lock = threading.Lock()
+        self._last_discovery = 0.0
+        try:
+            self.discoverer = KubeStrategyDiscoverer(namespace=self.namespace)
+        except ConfigException as exc:
+            _LOGGER.warning("Strategy discovery disabled: %s", exc)
+            self.discoverer = None
+
+        self._metric_flavour = Gauge(
+            "schedule_flavour_weight",
+            "Weight per flavour",
+            ["namespace", "schedule", "flavour"],
+        )
+        self._metric_valid_until = Gauge(
+            "schedule_valid_until",
+            "UNIX epoch of validUntil",
+            ["namespace", "schedule"],
+        )
+        self._metric_credit_balance = Gauge(
+            "scheduler_credit_balance",
+            "Current credit balance",
+            ["namespace", "schedule", "policy"],
+        )
+        self._metric_credit_velocity = Gauge(
+            "scheduler_credit_velocity",
+            "Average credit delta",
+            ["namespace", "schedule", "policy"],
+        )
+        self._metric_precision = Gauge(
+            "scheduler_avg_precision",
+            "Average precision seen",
+            ["namespace", "schedule", "policy"],
+        )
+        self._metric_processing_throttle = Gauge(
+            "scheduler_processing_throttle",
+            "Throttle factor applied to downstream processing",
+            ["namespace", "schedule", "policy"],
+        )
+        self._metric_ceiling = Gauge(
+            "scheduler_effective_replica_ceiling",
+            "Effective replica ceiling per component",
+            ["namespace", "schedule", "component"],
+        )
+        self._metric_policy_choice = Counter(
+            "scheduler_policy_choice_total",
+            "Policy selections per strategy",
+            ["namespace", "schedule", "policy", "strategy"],
+        )
+        self._metric_forecast = Gauge(
+            "scheduler_forecast_intensity",
+            "Carbon intensity forecast",
+            ["namespace", "schedule", "policy", "horizon"],
+        )
+
+    def _load_config(self) -> SchedulerConfig:
+        return SchedulerConfig(
+            target_error=float(os.getenv("TARGET_ERROR", "0.05")),
+            credit_min=float(os.getenv("CREDIT_MIN", "-0.5")),
+            credit_max=float(os.getenv("CREDIT_MAX", "0.5")),
+            smoothing_window=int(os.getenv("CREDIT_WINDOW", "300")),
+            policy_name=os.getenv("SCHEDULER_POLICY", "credit-greedy"),
+            valid_for=int(os.getenv("SCHEDULE_VALID_FOR", "60")),
+            discovery_interval=int(os.getenv("STRATEGY_DISCOVERY_INTERVAL", "60")),
+        )
+
+    def _load_default_strategies(self) -> List[StrategyProfile]:
+        raw = os.getenv("SCHEDULER_STRATEGIES")
+        if raw:
+            try:
+                payload = json.loads(raw)
+                strategies = [
+                    StrategyProfile(
+                        name=item["name"],
+                        precision=float(item.get("precision", 1.0)),
+                        carbon_intensity=float(item.get("carbon_intensity", 0.0)),
+                        deadline=int(item.get("deadline", 60)),
+                        enabled=bool(item.get("enabled", True)),
+                    )
+                    for item in payload
+                ]
+                return strategies
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                _LOGGER.warning("Invalid SCHEDULER_STRATEGIES env var: %s", exc)
+        return [
+            StrategyProfile("high-power", precision=1.0, carbon_intensity=1.0, deadline=40),
+            StrategyProfile("mid-power", precision=0.85, carbon_intensity=0.7, deadline=120),
+            StrategyProfile("low-power", precision=0.7, carbon_intensity=0.4, deadline=300),
+        ]
+
+    def _build_policy(self, name: str) -> SchedulerPolicy:
+        builder = _POLICY_BUILDERS.get(name, CreditGreedyPolicy)
+        if name not in _POLICY_BUILDERS:
+            _LOGGER.warning("Unknown policy '%s', falling back to credit-greedy", name)
+        return builder(self.ledger)
+
+    def reload_policy(self, name: str) -> None:
+        with self._lock:
+            self.policy = self._build_policy(name)
+            self.config.policy_name = name
+
+    def refresh_strategies(self, strategies: Iterable[StrategyProfile]) -> None:
+        self.registry.replace(strategies)
+
+    def evaluate(self) -> ScheduleDecision:
+        """Run the scheduler once and produce the next decision."""
+
+        with self._lock:
+            self._maybe_refresh_strategies()
+            strategies = self.registry.list()
+            if not strategies:
+                raise RuntimeError("No strategies available for scheduling")
+
+            forecast = self.forecast_manager.snapshot()
+            result = self.policy.evaluate(strategies, forecast)
+            credit_balance = self.ledger.update(result.avg_precision)
+            credit_velocity = self.ledger.velocity()
+            scaling = ScalingDirective.from_state(
+                credit_balance=credit_balance,
+                config=self.config,
+                forecast=forecast,
+                component_bounds=self.component_bounds,
+            )
+            decision = ScheduleDecision.from_policy(
+                result,
+                strategies,
+                self.config,
+                credit_balance,
+                credit_velocity,
+                scaling,
+            )
+            self._update_metrics(decision, result, forecast)
+            return decision
+
+    def _update_metrics(
+        self,
+        decision: ScheduleDecision,
+        policy_result: PolicyResult,
+        forecast: ForecastSnapshot,
+    ) -> None:
+        for flavour, weight in decision.flavour_weights.items():
+            self._metric_flavour.labels(self.namespace, self.name, flavour).set(weight)
+        self._metric_valid_until.labels(self.namespace, self.name).set(decision.valid_until.timestamp())
+
+        policy = self.config.policy_name
+        self._metric_credit_balance.labels(self.namespace, self.name, policy).set(decision.credits["balance"])
+        self._metric_credit_velocity.labels(self.namespace, self.name, policy).set(decision.credits["velocity"])
+        self._metric_precision.labels(self.namespace, self.name, policy).set(policy_result.avg_precision)
+        self._metric_processing_throttle.labels(self.namespace, self.name, policy).set(decision.scaling.throttle)
+
+        ceilings = decision.scaling.ceilings or {}
+        components = set(self.component_bounds.keys()) | set(ceilings.keys())
+        for component in components:
+            value = float(ceilings.get(component, 0))
+            self._metric_ceiling.labels(self.namespace, self.name, component).set(value)
+
+        for strategy, weight in policy_result.weights.items():
+            self._metric_policy_choice.labels(self.namespace, self.name, policy, strategy).inc(weight)
+
+        if forecast.intensity_now is not None:
+            self._metric_forecast.labels(self.namespace, self.name, policy, "now").set(forecast.intensity_now)
+        if forecast.intensity_next is not None:
+            self._metric_forecast.labels(self.namespace, self.name, policy, "next").set(forecast.intensity_next)
+
+    def publish_manual_schedule(self, schedule: Dict[str, object]) -> None:
+        """Expose metrics for a manually provided schedule payload."""
+
+        flavours = schedule.get("flavourWeights", {}) or {}
+        valid_until = schedule.get("validUntil")
+        processing = schedule.get("processing") or {}
+
+        for flavour, weight in flavours.items():
+            try:
+                self._metric_flavour.labels(self.namespace, self.name, flavour).set(float(weight))
+            except (TypeError, ValueError):
+                continue
+
+        if isinstance(valid_until, str):
+            try:
+                ts = datetime.strptime(valid_until, "%Y-%m-%dT%H:%M:%SZ").timestamp()
+                self._metric_valid_until.labels(self.namespace, self.name).set(ts)
+            except ValueError:
+                pass
+
+        policy = self.config.policy_name
+        try:
+            throttle_val = float(processing.get("throttle", 1.0))
+        except (TypeError, ValueError, AttributeError):
+            throttle_val = 1.0
+        if throttle_val < 0.0:
+            throttle_val = 0.0
+        elif throttle_val > 1.0:
+            throttle_val = 1.0
+        self._metric_processing_throttle.labels(self.namespace, self.name, policy).set(throttle_val)
+
+        ceilings = processing.get("ceilings") if isinstance(processing, dict) else {}
+        if isinstance(ceilings, dict):
+            for component, raw in ceilings.items():
+                try:
+                    value = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                self._metric_ceiling.labels(self.namespace, self.name, component).set(value)
+
+    def _maybe_refresh_strategies(self) -> None:
+        if not self.discoverer or self.config.discovery_interval <= 0:
+            return
+
+        now = time.time()
+        if now - self._last_discovery < self.config.discovery_interval:
+            return
+
+        discovered = self.discoverer.discover()
+        if discovered:
+            merged = merge_strategies(discovered, self._fallback_strategies)
+            self.registry.replace(merged)
+        self._last_discovery = now
