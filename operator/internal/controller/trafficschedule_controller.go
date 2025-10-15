@@ -19,6 +19,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -48,8 +49,10 @@ type TrafficScheduleReconciler struct {
 }
 
 const (
-	pollInterval  = 1 * time.Minute
-	engineBaseURL = "http://carbonrouter-decision-engine.carbonrouter-system.svc.cluster.local"
+	pollInterval            = 1 * time.Minute
+	engineBaseURL           = "http://carbonrouter-decision-engine.carbonrouter-system.svc.cluster.local"
+	configHashAnnotation    = "scheduling.carbonrouter.io/config-hash"
+	schedulePendingInterval = 5 * time.Second
 )
 
 var httpClient = &http.Client{Timeout: 5 * time.Second}
@@ -169,10 +172,39 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("No carbon strategies discovered – scheduler will use defaults")
 	}
 
-	// Push desired configuration to the decision engine before reading status.
-	if err := pushSchedulerConfig(req.Namespace, req.Name, existing.Spec, strategies); err != nil {
-		log.Error(err, "Failed to push scheduler configuration")
+	payload := buildSchedulerConfigPayload(existing.Spec, strategies)
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Error(err, "Failed to serialise scheduler payload")
 		return ctrl.Result{}, err
+	}
+
+	prevHash := ""
+	if existing.Annotations != nil {
+		prevHash = existing.Annotations[configHashAnnotation]
+	}
+	configHash := fmt.Sprintf("%x", sha256.Sum256(payloadBytes))
+	if prevHash != configHash {
+		if err := pushSchedulerConfig(req.Namespace, req.Name, payload); err != nil {
+			log.Error(err, "Failed to push scheduler configuration")
+			return ctrl.Result{}, err
+		}
+
+		original := existing.DeepCopy()
+		updated := existing.DeepCopy()
+		if updated.Annotations == nil {
+			updated.Annotations = map[string]string{}
+		}
+		updated.Annotations[configHashAnnotation] = configHash
+		if err := r.Patch(ctx, updated, client.MergeFrom(original)); err != nil {
+			log.Error(err, "Failed to persist scheduler config hash")
+			return ctrl.Result{}, err
+		}
+		if err := r.Get(ctx, req.NamespacedName, &existing); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		log.V(1).Info("Scheduler configuration unchanged; skipping push")
 	}
 
 	// 1) Get schedule from decision engine
@@ -183,6 +215,16 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusNoContent {
+		log.Info("Decision engine reports schedule pending", "statusCode", resp.StatusCode)
+		return ctrl.Result{RequeueAfter: schedulePendingInterval}, nil
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		err := fmt.Errorf("unexpected status code: %s", resp.Status)
+		log.Error(err, "Failed to get traffic schedule")
+		return ctrl.Result{}, err
+	}
 
 	// 2) Temp struct to decode the response
 	var remote struct {
@@ -213,23 +255,15 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Throttle float64          `json:"throttle"`
 			Ceilings map[string]int32 `json:"ceilings"`
 		} `json:"processing"`
-		Forecast struct {
-			Index    string  `json:"index"`
-			Now      float64 `json:"now"`
-			Next     float64 `json:"next"`
-			Schedule []struct {
-				From string `json:"from"`
-
-				To       string  `json:"to"`
-				Forecast float64 `json:"forecast"`
-				Index    string  `json:"index"`
-			} `json:"schedule"`
-		} `json:"forecast"`
 		Diagnostics map[string]float64 `json:"diagnostics"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&remote); err != nil {
 		log.Error(err, "Failed to decode traffic schedule response")
 		return ctrl.Result{}, err
+	}
+	if remote.ValidUntilISO == "" || len(remote.Strategies) == 0 {
+		log.Info("Decision engine returned incomplete schedule", "strategies", len(remote.Strategies), "validUntil", remote.ValidUntilISO)
+		return ctrl.Result{RequeueAfter: schedulePendingInterval}, nil
 	}
 
 	// 3) Create the status for the TrafficSchedule CR
@@ -242,30 +276,19 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	status := schedulingv1alpha1.TrafficScheduleStatus{
-		ActivePolicy:       remote.Policy.Name,
-		CreditBalance:      formatFloat(remote.Credits.Balance),
-		CreditVelocity:     formatFloat(remote.Credits.Velocity),
-		CreditTarget:       formatFloat(remote.Credits.Target),
-		CreditMin:          formatFloat(remote.Credits.Min),
-		CreditMax:          formatFloat(remote.Credits.Max),
-		CarbonIndex:        remote.Forecast.Index,
-		CarbonForecastNow:  formatFloat(remote.Forecast.Now),
-		CarbonForecastNext: formatFloat(remote.Forecast.Next),
-		Diagnostics:        diagnostics,
+		ActivePolicy:   remote.Policy.Name,
+		CreditBalance:  formatFloat(remote.Credits.Balance),
+		CreditVelocity: formatFloat(remote.Credits.Velocity),
+		CreditTarget:   formatFloat(remote.Credits.Target),
+		CreditMin:      formatFloat(remote.Credits.Min),
+		CreditMax:      formatFloat(remote.Credits.Max),
+		Diagnostics:    diagnostics,
 	}
 	if remote.Processing.Throttle > 0 {
 		status.ProcessingThrottle = formatFloat(remote.Processing.Throttle)
 	}
 	if len(remote.Processing.Ceilings) > 0 {
 		status.EffectiveReplicaCeilings = remote.Processing.Ceilings
-	}
-	for _, slot := range remote.Forecast.Schedule {
-		status.ForecastSchedule = append(status.ForecastSchedule, schedulingv1alpha1.ForecastSlot{
-			From:     slot.From,
-			To:       slot.To,
-			Forecast: formatFloat(slot.Forecast),
-			Index:    slot.Index,
-		})
 	}
 	for _, strategy := range remote.Strategies {
 		status.Strategies = append(status.Strategies, schedulingv1alpha1.StrategyDecision{
@@ -337,11 +360,7 @@ func (r *TrafficScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func pushSchedulerConfig(namespace, name string, spec schedulingv1alpha1.TrafficScheduleSpec, strategies []schedulerStrategy) error {
-	payload := buildSchedulerConfigPayload(spec)
-	if len(strategies) > 0 {
-		payload["strategies"] = strategies
-	}
+func pushSchedulerConfig(namespace, name string, payload map[string]interface{}) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -367,7 +386,7 @@ func pushSchedulerConfig(namespace, name string, spec schedulingv1alpha1.Traffic
 	return nil
 }
 
-func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec) map[string]interface{} {
+func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, strategies []schedulerStrategy) map[string]interface{} {
 	cfg := map[string]interface{}{}
 	s := spec.Scheduler
 
@@ -408,6 +427,10 @@ func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec) ma
 	}
 	if len(components) > 0 {
 		cfg["components"] = components
+	}
+
+	if len(strategies) > 0 {
+		cfg["strategies"] = strategies
 	}
 
 	return cfg
