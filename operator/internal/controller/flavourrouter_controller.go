@@ -165,8 +165,9 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// 2. Get the TrafficSchedule CR from the cluster
+	// Look for TrafficSchedules cluster-wide (not just in the service namespace)
 	var tsList schedulingv1alpha1.TrafficScheduleList
-	if err := r.List(ctx, &tsList, client.InNamespace(svc.Namespace)); err != nil {
+	if err := r.List(ctx, &tsList); err != nil {
 		return ctrl.Result{}, err
 	}
 	if len(tsList.Items) == 0 {
