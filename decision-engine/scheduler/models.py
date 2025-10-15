@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Mapping, Optional
 
 
@@ -282,10 +282,22 @@ class ScheduleDecision:
         credit_balance: float,
         credit_velocity: float,
         scaling: ScalingDirective,
+        forecast: ForecastSnapshot,
     ) -> "ScheduleDecision":
         """Assemble a schedule decision from policy output."""
 
         valid_until = datetime.utcnow() + timedelta(seconds=config.valid_for)
+        now_utc = datetime.utcnow()
+        for point in forecast.schedule:
+            candidate = point.end
+            if candidate is None:
+                continue
+            if candidate.tzinfo is not None:
+                candidate = candidate.astimezone(timezone.utc).replace(tzinfo=None)
+            if candidate <= now_utc:
+                continue
+            valid_until = candidate
+            break
 
         # Normalise weights to integer percentages summing to 100.
         raw_weights = policy_result.weights

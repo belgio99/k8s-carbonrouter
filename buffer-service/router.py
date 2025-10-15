@@ -38,6 +38,7 @@ from common.schedule import TrafficScheduleManager
 # ────────────────────────────────────
 RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 TS_NAME: str = os.getenv("TS_NAME", "traffic-schedule")
+TS_NAMESPACE: str = os.getenv("TS_NAMESPACE", "default")
 METRICS_PORT: int = int(os.getenv("METRICS_PORT", "8001"))
 TARGET_SVC_NAME: str = os.getenv("TARGET_SVC_NAME", "unknown-svc").lower()
 TARGET_SVC_NAMESPACE: str = os.getenv("TARGET_SVC_NAMESPACE", "default").lower()
@@ -277,7 +278,7 @@ async def main() -> None:
     # Prometheus
     start_http_server(METRICS_PORT)
 
-    schedule_mgr = TrafficScheduleManager(TS_NAME)
+    schedule_mgr = TrafficScheduleManager(TS_NAME, TS_NAMESPACE)
 
     loop = asyncio.get_running_loop()
     loop.create_task(schedule_mgr.load_once())

@@ -5,6 +5,8 @@ metadata:
   name: {{ include "carbonstat.fullname" $ }}-{{ .name }}
   labels:
     {{- include "carbonstat.labels" $ | nindent 4 }}
+    carbonstat.precision: {{ .precision | quote }}
+    carbonrouter/parent-service: "carbonstat"
 spec:
   {{- if not $.Values.autoscaling.enabled }}
   replicas: {{ $.Values.replicaCount }}

@@ -628,6 +628,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 		{Name: "TARGET_SVC_NAME", Value: svc.Name},
 		{Name: "TARGET_SVC_NAMESPACE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
 		{Name: "TS_NAME", Value: "traffic-schedule"},
+		{Name: "TS_NAMESPACE", Value: "default"},
 		{Name: "DEBUG", Value: fmt.Sprintf("%t", debug)},
 		{Name: "PYTHONUNBUFFERED", Value: "1"},
 	}

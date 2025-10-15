@@ -25,8 +25,9 @@ class TrafficScheduleManager:
       • expiry_guard()      – reload when validUntil is reached
     """
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, namespace: str = "default") -> None:
         self._name: str = name
+        self._namespace: str = namespace
         self._current: dict[str, Any] = DEFAULT_SCHEDULE.copy()
         self._lock = asyncio.Lock()
 
@@ -57,9 +58,10 @@ class TrafficScheduleManager:
         return result
 
     async def load_once(self) -> None:
-        obj = await self._api.get_cluster_custom_object(
+        obj = await self._api.get_namespaced_custom_object(
             group="scheduling.carbonrouter.io",
             version="v1alpha1",
+            namespace=self._namespace,
             plural="trafficschedules",
             name=self._name,
         )
@@ -72,9 +74,10 @@ class TrafficScheduleManager:
         while True:
             try:
                 stream = self._watch.stream(
-                    self._api.list_cluster_custom_object,
+                    self._api.list_namespaced_custom_object,
                     group="scheduling.carbonrouter.io",
                     version="v1alpha1",
+                    namespace=self._namespace,
                     plural="trafficschedules",
                     field_selector=field_selector,
                     timeout_seconds=90,

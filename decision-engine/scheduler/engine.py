@@ -254,6 +254,7 @@ class SchedulerEngine:
                 credit_balance,
                 credit_velocity,
                 scaling,
+                forecast,
             )
             self._update_metrics(decision, result, forecast)
             return decision

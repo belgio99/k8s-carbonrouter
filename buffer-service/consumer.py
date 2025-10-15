@@ -58,6 +58,7 @@ TARGET_BASE_URL: str = (
 )
 
 TS_NAME: str = os.getenv("TS_NAME", "traffic-schedule")
+TS_NAMESPACE: str = os.getenv("TS_NAMESPACE", "default")
 METRICS_PORT: int = int(os.getenv("METRICS_PORT", "8001"))
 QUEUE_PREFIX: str = f"{TARGET_SVC_NAMESPACE}.{TARGET_SVC_NAME}"
 EXCHANGE_NAME: str = QUEUE_PREFIX
@@ -304,7 +305,7 @@ async def main() -> None:
     start_http_server(METRICS_PORT)
     print(f"Prometheus metrics available at /metrics, port {METRICS_PORT}")
     # TrafficSchedule manager (background task)
-    schedule_mgr = TrafficScheduleManager(TS_NAME)
+    schedule_mgr = TrafficScheduleManager(TS_NAME, TS_NAMESPACE)
     await schedule_mgr.load_once()
     asyncio.create_task(schedule_mgr.watch_forever())
     asyncio.create_task(schedule_mgr.expiry_guard())
