@@ -1338,9 +1338,9 @@
         "definition": "label_values(schedule_flavour_weight, namespace)",
         "hide": 0,
         "includeAll": false,
-        "label": "Namespace",
+        "label": "Decision Engine Namespace",
         "multi": false,
-        "name": "namespace",
+        "name": "decision_engine_namespace",
         "options": [],
         "query": {
           "qryType": 1,
@@ -1356,14 +1356,42 @@
       {
         "current": {
           "selected": false,
-          "text": "trafficschedule",
-          "value": "trafficschedule"
+          "text": "carbonstat",
+          "value": "carbonstat"
         },
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(schedule_flavour_weight{namespace=\"$namespace\"}, schedule)",
+        "definition": "label_values(kube_deployment_status_replicas, namespace)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Application Namespace",
+        "multi": false,
+        "name": "app_namespace",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(kube_deployment_status_replicas, namespace)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "traffic-schedule",
+          "value": "traffic-schedule"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(schedule_flavour_weight{namespace=\"$decision_engine_namespace\"}, schedule)",
         "hide": 0,
         "includeAll": false,
         "label": "Schedule",
@@ -1372,7 +1400,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(schedule_flavour_weight{namespace=\"$namespace\"}, schedule)",
+          "query": "label_values(schedule_flavour_weight{namespace=\"$decision_engine_namespace\"}, schedule)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,

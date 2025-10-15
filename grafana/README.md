@@ -2,6 +2,14 @@
 
 This Grafana dashboard provides a comprehensive visualization of the data exposed in the status of TrafficSchedule resources.
 
+## Template Variables
+
+The dashboard uses the following template variables:
+
+* **Decision Engine Namespace**: The namespace where the decision-engine is deployed (typically `carbonrouter-system`)
+* **Application Namespace**: The namespace where the scheduled application is deployed (e.g., `carbonstat`)
+* **Schedule**: The TrafficSchedule resource name to monitor
+
 ## Dashboard Contents
 
 The dashboard includes the following panels:
