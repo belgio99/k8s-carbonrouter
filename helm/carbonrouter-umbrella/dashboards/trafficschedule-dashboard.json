@@ -1177,7 +1177,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (label_carbonstat_precision) (kube_deployment_status_replicas{namespace=\"$app_namespace\", label_carbonstat_precision!=\"\"})",
+          "expr": "sum by (label_carbonstat_precision) (kube_deployment_labels{namespace=\"$app_namespace\", label_carbonstat_precision!=\"\"} * on(namespace, deployment) group_left kube_deployment_status_replicas{namespace=\"$app_namespace\"})",
           "legendFormat": "{{label_carbonstat_precision}}%",
           "range": true,
           "refId": "A"

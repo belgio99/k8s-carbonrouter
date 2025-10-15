@@ -96,7 +96,8 @@ The dashboard includes the following panels:
 
 * **Type**: Time Series
 * **Description**: Current replica count from kube-state-metrics, grouped by precision label
-* **Metric**: `sum by (label_carbonstat_precision) (kube_deployment_status_replicas)`
+* **Metric**: `sum by (label_carbonstat_precision) (kube_deployment_labels{namespace="$app_namespace", label_carbonstat_precision!=""} * on(namespace, deployment) group_left kube_deployment_status_replicas{namespace="$app_namespace"})`
+* **Note**: Uses a join between `kube_deployment_labels` and `kube_deployment_status_replicas` because custom labels are only available in the labels metric
 
 ### 13. Router Request Latency
 
