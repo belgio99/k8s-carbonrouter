@@ -151,7 +151,8 @@ class SchedulerEngine:
         )
         default_strategies = self._load_default_strategies()
         provided_strategies = list(strategies) if strategies else []
-        initial_strategies = _merge_with_fallback(provided_strategies, default_strategies)
+        # Use only provided strategies if available, otherwise use defaults
+        initial_strategies = provided_strategies if provided_strategies else default_strategies
         self._fallback_strategies = list(default_strategies)
         self.registry = StrategyRegistry(initial_strategies)
         self.forecast_manager = ForecastManager(CarbonForecastProvider(), DemandEstimator())
