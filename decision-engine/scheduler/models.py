@@ -192,7 +192,7 @@ class ScalingDirective:
         min_throttle: float = 0.2,
         intensity_floor: float = 150.0,
         intensity_ceiling: float = 350.0,
-        component_bounds: Mapping[str, Mapping[str, int]] | None = None,
+    component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
     ) -> "ScalingDirective":
         span = config.credit_max - config.credit_min
         if span <= 0:

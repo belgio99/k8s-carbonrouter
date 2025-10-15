@@ -30,7 +30,7 @@ _LOGGER = logging.getLogger("scheduler")
 class StrategyRegistry:
     """In-memory registry of available strategies."""
 
-    def __init__(self, strategies: Iterable[StrategyProfile] | None = None) -> None:
+    def __init__(self, strategies: Optional[Iterable[StrategyProfile]] = None) -> None:
         self._lock = threading.Lock()
         self._strategies: Dict[str, StrategyProfile] = {}
         if strategies:
@@ -72,11 +72,11 @@ class SchedulerEngine:
 
     def __init__(
         self,
-        config: SchedulerConfig | None = None,
+    config: Optional[SchedulerConfig] = None,
         namespace: str = "default",
         name: str = "default",
         component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
-        strategies: Iterable[StrategyProfile] | None = None,
+    strategies: Optional[Iterable[StrategyProfile]] = None,
     ) -> None:
         self.namespace = namespace
         self.name = name

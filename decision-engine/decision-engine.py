@@ -228,7 +228,7 @@ class SchedulerSession:
             self._schedule = None
         self._refresh_event.set()
 
-    def get_schedule(self) -> Dict[str, Any] | None:
+    def get_schedule(self) -> Optional[Dict[str, Any]]:
         with self._lock:
             now = time.time()
             if self._manual_schedule and self._manual_expiry > now:

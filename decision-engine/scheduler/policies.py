@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 from .ledger import CreditLedger
 from .models import ForecastSnapshot, PolicyDiagnostics, PolicyResult, StrategyProfile
@@ -21,7 +21,7 @@ class SchedulerPolicy(ABC):
     def evaluate(
         self,
         strategies: Iterable[StrategyProfile],
-        forecast: ForecastSnapshot | None = None,
+    forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
         """Return a distribution for the next scheduling window."""
 
@@ -34,7 +34,7 @@ class CreditGreedyPolicy(SchedulerPolicy):
     def evaluate(
         self,
         strategies: Iterable[StrategyProfile],
-        forecast: ForecastSnapshot | None = None,
+    forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
         strategies = [s for s in strategies if s.enabled]
         if not strategies:
@@ -95,7 +95,7 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
     def evaluate(
         self,
         strategies: Iterable[StrategyProfile],
-        forecast: ForecastSnapshot | None = None,
+    forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
         strategy_list = [s for s in strategies]
         base = super().evaluate(strategy_list[:], forecast)
@@ -138,7 +138,7 @@ class PrecisionTierPolicy(SchedulerPolicy):
     def evaluate(
         self,
         strategies: Iterable[StrategyProfile],
-        forecast: ForecastSnapshot | None = None,
+    forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
         strategies = [s for s in strategies if s.enabled]
         if not strategies:
