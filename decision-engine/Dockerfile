@@ -5,7 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY decision-engine.py .
+# Copy application entrypoint and local modules
+COPY decision-engine.py ./
+COPY scheduler ./scheduler
 
 EXPOSE 5001
 
