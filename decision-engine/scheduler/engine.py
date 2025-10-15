@@ -35,7 +35,7 @@ from .models import (
     ScalingDirective,
     precision_key,
 )
-from .policies import CreditGreedyPolicy, ForecastAwarePolicy, PrecisionTierPolicy, SchedulerPolicy
+from .strategies import CreditGreedyPolicy, ForecastAwarePolicy, PrecisionTierPolicy, SchedulerPolicy
 from .providers import CarbonForecastProvider, DemandEstimator, ForecastManager
 
 _LOGGER = logging.getLogger("scheduler")
