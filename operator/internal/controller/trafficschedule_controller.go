@@ -78,7 +78,8 @@ func (r *TrafficScheduleReconciler) discoverStrategies(ctx context.Context, name
 	logger := ctrl.LoggerFrom(ctx).WithName("[TrafficSchedule][Discovery]")
 
 	var deployments appsv1.DeploymentList
-	if err := r.List(ctx, &deployments, client.InNamespace(namespace)); err != nil {
+	// Search cluster-wide for deployments with precision labels, not just in the TrafficSchedule namespace
+	if err := r.List(ctx, &deployments); err != nil {
 		return nil, err
 	}
 
