@@ -33,14 +33,24 @@ The dashboard includes the following panels:
 * **Description**: Forecasted carbon intensity for the next slot
 * **Metric**: `scheduler_forecast_intensity{horizon="next"}`
 
-### 4. Carbon Intensity Forecast (48h)
+### 4. Carbon Intensity Forecast Timeline
 
-* **Type**: Time Series
-* **Description**: Extended carbon intensity forecast up to 48 hours ahead
+* **Type**: Time Series (Points)
+* **Description**: Extended carbon intensity forecast up to 48 hours ahead. Each point represents a forecast value, labeled with its horizon offset (e.g., "0.5h ahead", "1.0h ahead").
 * **Metric**: `scheduler_forecast_intensity{horizon=~"[0-9]+\\.[0-9]+h"}`
-* **Note**: Shows all forecasted values with `horizon` labels like "0.5h", "1.0h", "2.5h", etc.
+* **Note**: The visualization uses points instead of lines to clearly show discrete forecast values. Each series represents a different time horizon (e.g., "0.5h", "1.0h", "2.5h").
 
-### 4. Credit Ledger (Balance & Velocity)
+### 5. Forecast Schedule (Target Times)
+
+* **Type**: Table
+* **Description**: Displays the forecast schedule in tabular format, showing the horizon offset and corresponding carbon intensity forecast
+* **Metric**: `scheduler_forecast_intensity{horizon=~"[0-9]+\\.[0-9]+h"}` (instant query)
+* **Columns**:
+  * **Horizon**: Time offset from now (e.g., "0.5h", "1.0h")
+  * **Forecast (gCO2/kWh)**: Predicted carbon intensity value with color-coded background based on thresholds
+* **Note**: This table provides a clear view of when each forecast applies by showing the horizon offset. To calculate the actual target time, add the horizon to the current time shown in the "now" gauge.
+
+### 6. Credit Ledger (Balance & Velocity)
 
 * **Type**: Time Series
 * **Description**: Credit balance and rate of change over time
@@ -49,32 +59,32 @@ The dashboard includes the following panels:
   * `scheduler_credit_balance`
   * `scheduler_credit_velocity`
 
-### 5. Average Precision
+### 7. Average Precision
 
 * **Type**: Gauge
 * **Description**: Average precision delivered by the system
 * **Metric**: `scheduler_avg_precision`
 * **Thresholds**: Red < 60%, Orange < 80%, Yellow < 95%, Green ≥ 95%
 
-### 6. Processing Throttle
+### 8. Processing Throttle
 
 * **Type**: Gauge
 * **Description**: Throttling factor applied to downstream processing (0–1)
 * **Metric**: `scheduler_processing_throttle`
 
-### 7. Effective Replica Ceilings
+### 9. Effective Replica Ceilings
 
 * **Type**: Time Series
 * **Description**: Effective replica limits for each component
 * **Metric**: `scheduler_effective_replica_ceiling`
 
-### 8. Policy Strategy Selection Rate
+### 10. Policy Strategy Selection Rate
 
 * **Type**: Time Series (Bar Chart)
 * **Description**: Frequency of selection for different policy strategies
 * **Metric**: `sum by (strategy) (rate(scheduler_policy_choice_total[5m]))`
 
-### 9. Active Policy
+### 11. Active Policy
 
 * **Type**: Table
 * **Description**: Displays the currently active scheduling policy (e.g., "forecast-aware")
