@@ -74,5 +74,5 @@ fields such as `spec.router.resources`, `spec.consumer.autoscaling`, and
 
 - CRD definitions: `operator/config/crd/bases/`
 - Sample manifests: `operator/config/samples/`
-- Umbrella charts: `helm/carbonshift-umbrella`
+- Umbrella charts: `helm/carbonrouter-umbrella`
 

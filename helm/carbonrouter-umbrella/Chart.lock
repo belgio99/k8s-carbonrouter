@@ -20,5 +20,5 @@ dependencies:
 - name: carbonrouter-operator
   repository: file://../../operator/dist/chart
   version: 0.1.0
-digest: sha256:20db43c6503e9bba7f08561139a9ff19ef73b828bfe5d406544ab33256023b15
-generated: "2025-07-14T16:23:12.986656+02:00"
+digest: sha256:b80ce0d93488ea78f7db6acee54a87c8061dc4a3f6775c7d023af99a1544bbc2
+generated: "2025-10-15T11:47:24.994368+02:00"

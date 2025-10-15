@@ -55,7 +55,7 @@ manifests), `docs/` (design notes), and `grafana/` (dashboards).
 
 > The repository assumes a working Kubernetes cluster (Kind or K3s works well),
 > access to a RabbitMQ endpoint, and Docker or another OCI builder. For a full
-> reference deployment see the Helm charts under `helm/carbonshift-umbrella`.
+> reference deployment see the Helm charts under `helm/carbonrouter-umbrella`.
 
 1. **Build container images**
 
@@ -97,7 +97,7 @@ the decision engine, buffer service, and the sample carbonstat flavours.
   Common commands are exposed via `make` in `operator/` (e.g. `make test`,
   `make run` for a local manager).
 - Helm charts in `helm/` are structured per component and aggregated by the
-  umbrella chart `helm/carbonshift-umbrella`.
+  umbrella chart `helm/carbonrouter-umbrella`.
 
 ## Observability
 
