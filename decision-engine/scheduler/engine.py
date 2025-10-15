@@ -56,6 +56,53 @@ _POLICY_BUILDERS: Dict[str, type[SchedulerPolicy]] = {
     "precision-tier": PrecisionTierPolicy,
 }
 
+# Global Prometheus metrics reused across scheduler sessions to avoid duplicate registrations.
+_METRIC_FLAVOUR = Gauge(
+    "schedule_flavour_weight",
+    "Weight per flavour",
+    ["namespace", "schedule", "flavour"],
+)
+_METRIC_VALID_UNTIL = Gauge(
+    "schedule_valid_until",
+    "UNIX epoch of validUntil",
+    ["namespace", "schedule"],
+)
+_METRIC_CREDIT_BALANCE = Gauge(
+    "scheduler_credit_balance",
+    "Current credit balance",
+    ["namespace", "schedule", "policy"],
+)
+_METRIC_CREDIT_VELOCITY = Gauge(
+    "scheduler_credit_velocity",
+    "Average credit delta",
+    ["namespace", "schedule", "policy"],
+)
+_METRIC_PRECISION = Gauge(
+    "scheduler_avg_precision",
+    "Average precision seen",
+    ["namespace", "schedule", "policy"],
+)
+_METRIC_PROCESSING_THROTTLE = Gauge(
+    "scheduler_processing_throttle",
+    "Throttle factor applied to downstream processing",
+    ["namespace", "schedule", "policy"],
+)
+_METRIC_CEILING = Gauge(
+    "scheduler_effective_replica_ceiling",
+    "Effective replica ceiling per component",
+    ["namespace", "schedule", "component"],
+)
+_METRIC_POLICY_CHOICE = Counter(
+    "scheduler_policy_choice_total",
+    "Policy selections per strategy",
+    ["namespace", "schedule", "policy", "strategy"],
+)
+_METRIC_FORECAST = Gauge(
+    "scheduler_forecast_intensity",
+    "Carbon intensity forecast",
+    ["namespace", "schedule", "policy", "horizon"],
+)
+
 
 def _merge_with_fallback(
     primary: Iterable[StrategyProfile],
@@ -72,11 +119,11 @@ class SchedulerEngine:
 
     def __init__(
         self,
-    config: Optional[SchedulerConfig] = None,
+        config: Optional[SchedulerConfig] = None,
         namespace: str = "default",
         name: str = "default",
         component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
-    strategies: Optional[Iterable[StrategyProfile]] = None,
+        strategies: Optional[Iterable[StrategyProfile]] = None,
     ) -> None:
         self.namespace = namespace
         self.name = name
@@ -111,51 +158,15 @@ class SchedulerEngine:
         self.policy = self._build_policy(self.config.policy_name)
         self._lock = threading.Lock()
 
-        self._metric_flavour = Gauge(
-            "schedule_flavour_weight",
-            "Weight per flavour",
-            ["namespace", "schedule", "flavour"],
-        )
-        self._metric_valid_until = Gauge(
-            "schedule_valid_until",
-            "UNIX epoch of validUntil",
-            ["namespace", "schedule"],
-        )
-        self._metric_credit_balance = Gauge(
-            "scheduler_credit_balance",
-            "Current credit balance",
-            ["namespace", "schedule", "policy"],
-        )
-        self._metric_credit_velocity = Gauge(
-            "scheduler_credit_velocity",
-            "Average credit delta",
-            ["namespace", "schedule", "policy"],
-        )
-        self._metric_precision = Gauge(
-            "scheduler_avg_precision",
-            "Average precision seen",
-            ["namespace", "schedule", "policy"],
-        )
-        self._metric_processing_throttle = Gauge(
-            "scheduler_processing_throttle",
-            "Throttle factor applied to downstream processing",
-            ["namespace", "schedule", "policy"],
-        )
-        self._metric_ceiling = Gauge(
-            "scheduler_effective_replica_ceiling",
-            "Effective replica ceiling per component",
-            ["namespace", "schedule", "component"],
-        )
-        self._metric_policy_choice = Counter(
-            "scheduler_policy_choice_total",
-            "Policy selections per strategy",
-            ["namespace", "schedule", "policy", "strategy"],
-        )
-        self._metric_forecast = Gauge(
-            "scheduler_forecast_intensity",
-            "Carbon intensity forecast",
-            ["namespace", "schedule", "policy", "horizon"],
-        )
+        self._metric_flavour = _METRIC_FLAVOUR
+        self._metric_valid_until = _METRIC_VALID_UNTIL
+        self._metric_credit_balance = _METRIC_CREDIT_BALANCE
+        self._metric_credit_velocity = _METRIC_CREDIT_VELOCITY
+        self._metric_precision = _METRIC_PRECISION
+        self._metric_processing_throttle = _METRIC_PROCESSING_THROTTLE
+        self._metric_ceiling = _METRIC_CEILING
+        self._metric_policy_choice = _METRIC_POLICY_CHOICE
+        self._metric_forecast = _METRIC_FORECAST
 
     def _load_config(self) -> SchedulerConfig:
         return SchedulerConfig(
