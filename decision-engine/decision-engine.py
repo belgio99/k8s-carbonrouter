@@ -708,8 +708,8 @@ if __name__ == "__main__":
     LOGGER.info("Starting Prometheus metrics server on port %s", metrics_port)
     start_http_server(metrics_port)
 
-    # Ensure default scheduler session exists
-    registry.ensure_default()
+    # Don't create default scheduler session - only create sessions when configured by operator
+    # registry.ensure_default()
 
     # Start Flask API server
     app.run(host="0.0.0.0", port=80)
