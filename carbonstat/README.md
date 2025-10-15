@@ -15,3 +15,59 @@ If you wish to reuse source code in this repo, please consider citing it.
 - Carbon-aware optimization based on forecasted carbon intensity and request rates
 - Configurable trade-off between energy consumption and output quality
 - Open-source Python prototype using Google OR-Tools
+
+## Strategies
+
+Strategies live under `flavours/` and implement the `CarbonAwareStrategy`
+interface. Each strategy defines two methods:
+
+- `nop()` – returns an identifier included in responses and metrics.
+- `avg(data)` – computes the mean according to the strategy's sampling rules.
+
+| Strategy | Key (`FLAVOUR`) | Identifier | Behaviour |
+| -------- | --------------- | ---------- | --------- |
+| `HighPowerStrategy` | `high` | `HIGH_POWER` | Uses the full dataset to provide the exact arithmetic mean. |
+| `MediumPowerStrategy` | `mid` | `MEDIUM_POWER` | Samples every other element (approx. 50 percent of the input). |
+| `LowPowerStrategy` | `low` | `LOW_POWER` | Samples one element out of four (approx. 25 percent of the input). |
+
+## API
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `POST` | `/avg` | Accepts `{ "numbers": [...] }` and returns `{ "avg": <value>, "elapsed": <ms>, "strategy": <id> }`. |
+| `GET` | `/healthz` | Returns `200 OK` if the process is ready. |
+
+The WSGI server listens on `0.0.0.0:80` by default.
+
+## Environment Variables
+
+| Name | Default | Description |
+| ---- | ------- | ----------- |
+| `FLAVOUR` | `high` | Chooses the execution strategy (`high`, `mid`, or `low`). |
+
+## Running Locally
+
+```bash
+cd carbonstat
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+export FLAVOUR=high
+python carbon-aware-service.py
+```
+
+Test the endpoint:
+
+```bash
+curl -X POST http://localhost:80/avg \
+  -H "Content-Type: application/json" \
+  -d '{"numbers": [1, 2, 3, 4, 5]}'
+```
+
+## Docker Image
+
+```bash
+docker build -t carbonstat:dev .
+```
+

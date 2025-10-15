@@ -145,9 +145,9 @@ class PrecisionTierPolicy(SchedulerPolicy):
             raise ValueError("no strategies enabled")
 
         tiers = {
-            "high": [s for s in strategies if s.precision >= 0.95],
-            "mid": [s for s in strategies if 0.8 <= s.precision < 0.95],
-            "low": [s for s in strategies if s.precision < 0.8],
+            "tier-1": [s for s in strategies if s.precision >= 0.95],
+            "tier-2": [s for s in strategies if 0.8 <= s.precision < 0.95],
+            "tier-3": [s for s in strategies if s.precision < 0.8],
         }
 
         # Base allocations respecting ledger balance
@@ -156,18 +156,18 @@ class PrecisionTierPolicy(SchedulerPolicy):
             allowance = max(0.0, min(1.0, self.ledger.balance / self.ledger.credit_max))
 
         weights: Dict[str, float] = {}
-        total_high = len(tiers["high"]) or 1
-        total_mid = len(tiers["mid"]) or 1
-        total_low = len(tiers["low"]) or 1
+        total_primary = len(tiers["tier-1"]) or 1
+        total_secondary = len(tiers["tier-2"]) or 1
+        total_third = len(tiers["tier-3"]) or 1
 
-        high_share = max(0.3, 1.0 - allowance)
-        mid_share = min(0.5, allowance * 0.6)
-        low_share = max(0.0, allowance - mid_share)
+        primary_share = max(0.3, 1.0 - allowance)
+        secondary_share = min(0.5, allowance * 0.6)
+        tertiary_share = max(0.0, allowance - secondary_share)
 
         for tier, share, total in (
-            ("high", high_share, total_high),
-            ("mid", mid_share, total_mid),
-            ("low", low_share, total_low),
+            ("tier-1", primary_share, total_primary),
+            ("tier-2", secondary_share, total_secondary),
+            ("tier-3", tertiary_share, total_third),
         ):
             for strategy in tiers[tier] or []:
                 weights[strategy.name] = share / total
@@ -186,9 +186,9 @@ class PrecisionTierPolicy(SchedulerPolicy):
         diagnostics = PolicyDiagnostics(
             {
                 "allowance": allowance,
-                "high_share": high_share,
-                "mid_share": mid_share,
-                "low_share": low_share,
+                "tier_1_share": primary_share,
+                "tier_2_share": secondary_share,
+                "tier_3_share": tertiary_share,
             }
         )
         return PolicyResult(weights, avg_precision, diagnostics)

@@ -1,135 +1,78 @@
-# operator
-// TODO(user): Add simple overview of use/purpose
+# Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+The operator provisions and maintains the Kubernetes resources required for
+carbon-aware routing. It reconciles `TrafficSchedule` custom resources and
+services that opt in to carbonrouter via the `carbonrouter/enabled` label.
 
-## Getting Started
+## Controllers
 
-### Prerequisites
-- go version v1.23.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+### TrafficScheduleReconciler
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- Watches `scheduling.carbonrouter.io/v1alpha1` `TrafficSchedule` resources.
+- Discovers carbon strategy deployments in the same namespace by reading the
+  `carbonstat.precision` label on `Deployment` objects.
+- Pushes the discovered strategies and scheduler configuration to the decision
+  engine using `PUT /config/<namespace>/<name>`.
+- Retrieves the generated schedule from `GET /schedule/<namespace>/<name>` and
+  updates `status` with flavour weights, credit metrics, forecast data, and the
+  `validUntil` timestamp.
+- Requeues the reconcile loop as the schedule approaches expiry.
 
-```sh
-make docker-build docker-push IMG=<some-registry>/operator:tag
+### FlavourRouterReconciler
+
+- Watches `Service` resources labelled with `carbonrouter/enabled=true`.
+- Ensures the buffer service Deployments (`router`, `consumer`) and Services are
+  created in the target namespace with the correct environment variables.
+- Creates KEDA `ScaledObject` resources per flavour to autoscale the target
+  deployments based on queue depth and metrics.
+- Generates Istio `DestinationRule` and `VirtualService` objects that map
+  incoming traffic to precision-based subsets.
+- Handles cleanup when the enabling label is removed from a service.
+
+## Build & Deploy
+
+Prerequisites: Go 1.23+, Docker, kubectl, and access to a Kubernetes cluster.
+
+```bash
+cd operator
+make install          # install CRDs only
+make run              # run locally against the current kubeconfig (no RBAC)
+
+make docker-build IMG=<registry>/carbonrouter-operator:dev
+make docker-push IMG=<registry>/carbonrouter-operator:dev
+make deploy IMG=<registry>/carbonrouter-operator:dev
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+Remove the operator with `make undeploy` and clean up CRDs via `make uninstall`.
 
-**Install the CRDs into the cluster:**
+## Configuration
 
-```sh
-make install
-```
+Key environment variables for the controller manager (see `config/manager`):
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+| Name | Default | Description |
+| ---- | ------- | ----------- |
+| `ENABLE_LEADER_ELECTION` | `false` | Enables controller-runtime leader election when running multiple replicas. |
+| `METRICS_BIND_ADDRESS` | `0` | Address for metrics server (`:8443` for HTTPS). |
+| `HEALTH_PROBE_BIND_ADDRESS` | `:8081` | Address for readiness/liveness probes. |
+| `METRICS_SECURE` | `true` | Serve metrics over HTTPS when `true`. |
+| `WEBHOOK_CERT_PATH` | unset | Optional path to webhook TLS certificates. |
 
-```sh
-make deploy IMG=<some-registry>/operator:tag
-```
+High-level defaults for buffer service deployments are templated in
+`internal/controller/flavourrouter_controller.go`. Override them with CRD spec
+fields such as `spec.router.resources`, `spec.consumer.autoscaling`, and
+`spec.target.autoscaling`.
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+## Development Notes
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+- Generated binaries (`controller-gen`, `kustomize`) are vendored under `bin/`.
+- CRDs reside in `config/crd/bases/`; run `make manifests` after changing API
+  types.
+- Unit tests can be run with `make test`. To execute envtest-based suites,
+  ensure the Kubernetes test binaries are downloaded (`make envtest`).
 
-```sh
-kubectl apply -k config/samples/
-```
+## Related Resources
 
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v1-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-## License
-
-Copyright 2025 belgio99.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+- CRD definitions: `operator/config/crd/bases/`
+- Sample manifests: `operator/config/samples/`
+- Umbrella charts: `helm/carbonshift-umbrella`
 

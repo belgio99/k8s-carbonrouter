@@ -12,6 +12,13 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(value, high))
 
 
+def precision_key(precision: float) -> str:
+    """Return a stable name for a precision ratio."""
+
+    clamped = _clamp(precision, 0.0, 1.0)
+    return f"precision-{int(round(clamped * 100))}"
+
+
 @dataclass
 class StrategyProfile:
     """Represents a runnable strategy variant for the target service."""
@@ -19,7 +26,6 @@ class StrategyProfile:
     name: str
     precision: float = 1.0  # relative to baseline strategy
     carbon_intensity: float = 0.0  # gCO2eq per request (relative delta)
-    deadline: int = 60  # seconds
     enabled: bool = True
     annotations: Mapping[str, str] = field(default_factory=dict)
 
@@ -245,7 +251,6 @@ class ScheduleDecision:
     flavour_weights: Dict[str, int]
     flavour_rules: List[Dict[str, object]]
     strategies: List[Dict[str, object]]
-    deadlines: Dict[str, int]
     valid_until: datetime
     credits: Dict[str, float]
     policy_name: str
@@ -260,7 +265,6 @@ class ScheduleDecision:
             "flavourWeights": self.flavour_weights,
             "flavourRules": self.flavour_rules,
             "strategies": self.strategies,
-            "deadlines": self.deadlines,
             "validUntil": self.valid_until.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "credits": self.credits,
             "policy": {"name": self.policy_name},
@@ -293,8 +297,6 @@ class ScheduleDecision:
             key = max(scaled, key=scaled.get)
             scaled[key] += diff
 
-        deadlines = {s.name: s.deadline for s in strategies}
-
         credit_stats = {
             "balance": credit_balance,
             "velocity": credit_velocity,
@@ -309,19 +311,19 @@ class ScheduleDecision:
         strategies_meta: List[Dict[str, object]] = []
         for strategy in strategies:
             weight = scaled.get(strategy.name, 0)
+            precision_pct = int(round(strategy.precision * 100))
             flavour_rules.append(
                 {
                     "flavourName": strategy.name,
+                    "precision": precision_pct,
                     "weight": weight,
-                    "deadlineSec": strategy.deadline,
                 }
             )
             strategies_meta.append(
                 {
                     "name": strategy.name,
-                    "precision": int(round(strategy.precision * 100)),
+                    "precision": precision_pct,
                     "weight": weight,
-                    "deadline": strategy.deadline,
                     "carbonIntensity": strategy.carbon_intensity,
                     "enabled": strategy.enabled,
                 }
@@ -331,7 +333,6 @@ class ScheduleDecision:
             flavour_weights=scaled,
             flavour_rules=flavour_rules,
             strategies=strategies_meta,
-            deadlines=deadlines,
             valid_until=valid_until,
             credits=credit_stats,
             policy_name=config.policy_name,

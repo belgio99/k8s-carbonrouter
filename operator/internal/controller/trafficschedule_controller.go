@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"reflect"
 	"sort"
@@ -28,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -52,9 +54,93 @@ const (
 
 var httpClient = &http.Client{Timeout: 5 * time.Second}
 
+const (
+	strategyNameLabel    = "carbonstat.strategy"
+	carbonIntensityLabel = "carbonstat.emissions"
+)
+
+type schedulerStrategy struct {
+	Name            string            `json:"name"`
+	Precision       float64           `json:"precision"`
+	CarbonIntensity float64           `json:"carbonIntensity"`
+	Enabled         bool              `json:"enabled"`
+	Annotations     map[string]string `json:"annotations,omitempty"`
+}
+
 // +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=scheduling.carbonrouter.io,resources=trafficschedules/finalizers,verbs=update
+
+func (r *TrafficScheduleReconciler) discoverStrategies(ctx context.Context, namespace string) ([]schedulerStrategy, error) {
+	logger := ctrl.LoggerFrom(ctx).WithName("[TrafficSchedule][Discovery]")
+
+	var deployments appsv1.DeploymentList
+	if err := r.List(ctx, &deployments, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+
+	strategies := make([]schedulerStrategy, 0)
+	seen := make(map[string]struct{})
+
+	for _, dep := range deployments.Items {
+		labels := dep.GetLabels()
+		precisionValue := labels[precisionLabel]
+		if precisionValue == "" {
+			continue
+		}
+
+		precision, err := strconv.ParseFloat(precisionValue, 64)
+		if err != nil {
+			logger.Info("Skipping deployment with invalid precision label", "deployment", dep.Name, "value", precisionValue)
+			continue
+		}
+		if precision > 1 {
+			precision = precision / 100
+		}
+		if precision < 0 {
+			precision = 0
+		}
+		if precision > 1 {
+			precision = 1
+		}
+
+		precisionName := fmt.Sprintf("precision-%d", int(math.Round(precision*100)))
+
+		if _, exists := seen[precisionName]; exists {
+			logger.Info("Duplicate precision detected, keeping first occurrence", "precision", precisionName, "deployment", dep.Name)
+			continue
+		}
+
+		carbonIntensity := 0.0
+		if carbonLabel := labels[carbonIntensityLabel]; carbonLabel != "" {
+			if value, err := strconv.ParseFloat(carbonLabel, 64); err == nil {
+				carbonIntensity = value
+			} else {
+				logger.Info("Ignoring invalid carbon intensity label", "deployment", dep.Name, "value", carbonLabel)
+			}
+		}
+
+		annotations := make(map[string]string, len(labels))
+		for key, value := range labels {
+			annotations[key] = value
+		}
+
+		strategies = append(strategies, schedulerStrategy{
+			Name:            precisionName,
+			Precision:       precision,
+			CarbonIntensity: carbonIntensity,
+			Enabled:         true,
+			Annotations:     annotations,
+		})
+		seen[precisionName] = struct{}{}
+	}
+
+	sort.Slice(strategies, func(i, j int) bool {
+		return strategies[i].Precision > strategies[j].Precision
+	})
+
+	return strategies, nil
+}
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -74,8 +160,17 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	strategies, err := r.discoverStrategies(ctx, req.Namespace)
+	if err != nil {
+		log.Error(err, "Failed to discover strategy deployments")
+		return ctrl.Result{}, err
+	}
+	if len(strategies) == 0 {
+		log.Info("No carbon strategies discovered – scheduler will use defaults")
+	}
+
 	// Push desired configuration to the decision engine before reading status.
-	if err := pushSchedulerConfig(req.Namespace, req.Name, existing.Spec); err != nil {
+	if err := pushSchedulerConfig(req.Namespace, req.Name, existing.Spec, strategies); err != nil {
 		log.Error(err, "Failed to push scheduler configuration")
 		return ctrl.Result{}, err
 	}
@@ -92,15 +187,15 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// 2) Temp struct to decode the response
 	var remote struct {
 		Strategies []struct {
-			Name      string `json:"name"`
-			Precision int    `json:"precision"`
-			Weight    int    `json:"weight"`
-			Deadline  int    `json:"deadline"`
+			Name            string  `json:"name"`
+			Precision       int     `json:"precision"`
+			Weight          int     `json:"weight"`
+			CarbonIntensity float64 `json:"carbonIntensity"`
 		} `json:"strategies"`
 		FlavourRules []struct {
 			FlavourName string `json:"flavourName"`
+			Precision   int    `json:"precision"`
 			Weight      int    `json:"weight"`
-			DeadlineSec int    `json:"deadlineSec"`
 		} `json:"flavourRules"`
 		Policy struct {
 			Name string `json:"name"`
@@ -123,7 +218,8 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Now      float64 `json:"now"`
 			Next     float64 `json:"next"`
 			Schedule []struct {
-				From     string  `json:"from"`
+				From string `json:"from"`
+
 				To       string  `json:"to"`
 				Forecast float64 `json:"forecast"`
 				Index    string  `json:"index"`
@@ -180,8 +276,8 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	for _, rule := range remote.FlavourRules {
 		status.FlavourRules = append(status.FlavourRules, schedulingv1alpha1.FlavourRule{
 			FlavourName: rule.FlavourName,
+			Precision:   rule.Precision,
 			Weight:      rule.Weight,
-			DeadlineSec: rule.DeadlineSec,
 		})
 	}
 	if t, err := time.Parse(time.RFC3339, remote.ValidUntilISO); err == nil {
@@ -192,7 +288,10 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return status.Strategies[i].Precision < status.Strategies[j].Precision
 	})
 	sort.Slice(status.FlavourRules, func(i, j int) bool {
-		return status.FlavourRules[i].FlavourName < status.FlavourRules[j].FlavourName
+		if status.FlavourRules[i].Precision == status.FlavourRules[j].Precision {
+			return status.FlavourRules[i].FlavourName < status.FlavourRules[j].FlavourName
+		}
+		return status.FlavourRules[i].Precision < status.FlavourRules[j].Precision
 	})
 
 	// 4) Overwrite old status with the new one
@@ -238,8 +337,11 @@ func (r *TrafficScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func pushSchedulerConfig(namespace, name string, spec schedulingv1alpha1.TrafficScheduleSpec) error {
+func pushSchedulerConfig(namespace, name string, spec schedulingv1alpha1.TrafficScheduleSpec, strategies []schedulerStrategy) error {
 	payload := buildSchedulerConfigPayload(spec)
+	if len(strategies) > 0 {
+		payload["strategies"] = strategies
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err

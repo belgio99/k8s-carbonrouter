@@ -6,13 +6,11 @@ import json
 import logging
 import os
 import threading
-import time
 from datetime import datetime
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from prometheus_client import Counter, Gauge
 
-from .discovery import ConfigException, KubeStrategyDiscoverer, merge_strategies
 from .ledger import CreditLedger
 from .models import (
     ForecastSnapshot,
@@ -21,6 +19,7 @@ from .models import (
     SchedulerConfig,
     ScalingDirective,
     StrategyProfile,
+    precision_key,
 )
 from .policies import CreditGreedyPolicy, ForecastAwarePolicy, PrecisionTierPolicy, SchedulerPolicy
 from .providers import CarbonForecastProvider, DemandEstimator, ForecastManager
@@ -58,6 +57,16 @@ _POLICY_BUILDERS: Dict[str, type[SchedulerPolicy]] = {
 }
 
 
+def _merge_with_fallback(
+    primary: Iterable[StrategyProfile],
+    fallback: Iterable[StrategyProfile],
+) -> List[StrategyProfile]:
+    merged: Dict[str, StrategyProfile] = {strategy.name: strategy for strategy in fallback}
+    for strategy in primary:
+        merged[strategy.name] = strategy
+    return sorted(merged.values(), key=lambda item: item.precision, reverse=True)
+
+
 class SchedulerEngine:
     """High-level orchestrator for the credit-based scheduler."""
 
@@ -67,6 +76,7 @@ class SchedulerEngine:
         namespace: str = "default",
         name: str = "default",
         component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
+        strategies: Iterable[StrategyProfile] | None = None,
     ) -> None:
         self.namespace = namespace
         self.name = name
@@ -93,17 +103,13 @@ class SchedulerEngine:
             window_size=self.config.smoothing_window,
         )
         default_strategies = self._load_default_strategies()
-        self.registry = StrategyRegistry(default_strategies)
-        self._fallback_strategies = default_strategies
+        provided_strategies = list(strategies) if strategies else []
+        initial_strategies = _merge_with_fallback(provided_strategies, default_strategies)
+        self._fallback_strategies = list(default_strategies)
+        self.registry = StrategyRegistry(initial_strategies)
         self.forecast_manager = ForecastManager(CarbonForecastProvider(), DemandEstimator())
         self.policy = self._build_policy(self.config.policy_name)
         self._lock = threading.Lock()
-        self._last_discovery = 0.0
-        try:
-            self.discoverer = KubeStrategyDiscoverer(namespace=self.namespace)
-        except ConfigException as exc:
-            _LOGGER.warning("Strategy discovery disabled: %s", exc)
-            self.discoverer = None
 
         self._metric_flavour = Gauge(
             "schedule_flavour_weight",
@@ -167,23 +173,30 @@ class SchedulerEngine:
         if raw:
             try:
                 payload = json.loads(raw)
-                strategies = [
-                    StrategyProfile(
-                        name=item["name"],
-                        precision=float(item.get("precision", 1.0)),
-                        carbon_intensity=float(item.get("carbon_intensity", 0.0)),
-                        deadline=int(item.get("deadline", 60)),
-                        enabled=bool(item.get("enabled", True)),
+                strategies = []
+                for raw in payload:
+                    name = raw.get("name")
+                    precision = float(raw.get("precision", 1.0))
+                    carbon_intensity = float(raw.get("carbon_intensity", 0.0))
+                    if precision > 1.0:
+                        precision /= 100.0
+                    precision = max(0.0, min(precision, 1.0))
+                    strategy_name = str(name) if isinstance(name, str) and name else precision_key(precision)
+                    strategies.append(
+                        StrategyProfile(
+                            name=strategy_name,
+                            precision=precision,
+                            carbon_intensity=carbon_intensity,
+                            enabled=bool(raw.get("enabled", True)),
+                        )
                     )
-                    for item in payload
-                ]
                 return strategies
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                 _LOGGER.warning("Invalid SCHEDULER_STRATEGIES env var: %s", exc)
         return [
-            StrategyProfile("high-power", precision=1.0, carbon_intensity=1.0, deadline=40),
-            StrategyProfile("mid-power", precision=0.85, carbon_intensity=0.7, deadline=120),
-            StrategyProfile("low-power", precision=0.7, carbon_intensity=0.4, deadline=300),
+            StrategyProfile(precision_key(1.0), precision=1.0, carbon_intensity=1.0),
+            StrategyProfile(precision_key(0.85), precision=0.85, carbon_intensity=0.7),
+            StrategyProfile(precision_key(0.7), precision=0.7, carbon_intensity=0.4),
         ]
 
     def _build_policy(self, name: str) -> SchedulerPolicy:
@@ -198,13 +211,17 @@ class SchedulerEngine:
             self.config.policy_name = name
 
     def refresh_strategies(self, strategies: Iterable[StrategyProfile]) -> None:
-        self.registry.replace(strategies)
+        candidate_strategies = list(strategies)
+        if candidate_strategies:
+            merged = _merge_with_fallback(candidate_strategies, self._fallback_strategies)
+        else:
+            merged = list(self._fallback_strategies)
+        self.registry.replace(merged)
 
     def evaluate(self) -> ScheduleDecision:
         """Run the scheduler once and produce the next decision."""
 
         with self._lock:
-            self._maybe_refresh_strategies()
             strategies = self.registry.list()
             if not strategies:
                 raise RuntimeError("No strategies available for scheduling")
@@ -299,17 +316,3 @@ class SchedulerEngine:
                 except (TypeError, ValueError):
                     continue
                 self._metric_ceiling.labels(self.namespace, self.name, component).set(value)
-
-    def _maybe_refresh_strategies(self) -> None:
-        if not self.discoverer or self.config.discovery_interval <= 0:
-            return
-
-        now = time.time()
-        if now - self._last_discovery < self.config.discovery_interval:
-            return
-
-        discovered = self.discoverer.discover()
-        if discovered:
-            merged = merge_strategies(discovered, self._fallback_strategies)
-            self.registry.replace(merged)
-        self._last_discovery = now

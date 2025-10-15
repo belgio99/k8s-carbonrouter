@@ -408,14 +408,6 @@ func (r *FlavourRouterReconciler) cleanupResources(ctx context.Context, svc *cor
 			log.Error(err, "Failed to delete precision ScaledObject", "ScaledObject", soName)
 		}
 	}
-	// Delete legacy flavour ScaledObjects if still present
-	for _, flavour := range []string{"high-power", "mid-power", "low-power"} {
-		soName := fmt.Sprintf("%s-%s", svc.Name, flavour)
-		so := &kedav1alpha1.ScaledObject{ObjectMeta: metav1.ObjectMeta{Name: soName, Namespace: svc.Namespace}}
-		if err := r.Delete(ctx, so, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
-			log.Error(err, "Failed to delete legacy flavour ScaledObject", "ScaledObject", soName)
-		}
-	}
 	consumerSoName := fmt.Sprintf("buffer-service-consumer-%s", svc.Name)
 	consumerSo := &kedav1alpha1.ScaledObject{ObjectMeta: metav1.ObjectMeta{Name: consumerSoName, Namespace: svc.Namespace}}
 	if err := r.Delete(ctx, consumerSo, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {

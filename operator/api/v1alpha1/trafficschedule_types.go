@@ -100,8 +100,8 @@ type StrategyDecision struct {
 // FlavourRule describes routing weights for router consumers.
 type FlavourRule struct {
 	FlavourName string `json:"flavourName"`
+	Precision   int    `json:"precision"`
 	Weight      int    `json:"weight"`
-	DeadlineSec int    `json:"deadlineSec"`
 }
 
 // TrafficScheduleStatus defines the observed state of TrafficSchedule.

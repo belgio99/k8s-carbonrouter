@@ -109,12 +109,15 @@ Additional metadata lives under `credits` and `policy` to avoid breaking existin
 
 ## Kubernetes integration
 
-1. **Strategy discovery** – each per-schedule engine scopes discovery to the TrafficSchedule namespace by default and lists deployments with label `carbonrouter/enabled=true`. For each matching deployment it reads:
-   - `carbonstat.precision` → precision ratio (float, default 1.0 when missing).
-   - Optional `carbonstat.strategy` → stable name; otherwise the deployment name is used.
-   - `carbonstat.deadline` → seconds; fallback derived from existing defaults.
-2. **Queue naming** – router and consumer derive queue names using `<service>.<namespace>.<strategy>`. Existing `high/mid/low` aliases are preserved for backwards compatibility via a lookup table.
-3. **Autoscaling hints** – the decision engine exports per-strategy request rates and credit stats so that KEDA triggers can scale down aggressive strategies when credit is insufficient.
+1. **Strategy discovery** – the operator inspects deployments in the TrafficSchedule namespace labelled with `carbonstat.precision` and publishes the resulting profiles to the decision engine during every reconcile. For each matching deployment it reads:
+
+    - `carbonstat.precision` → precision ratio (float, defaults to 1.0 when missing or invalid). Values greater than 1 are treated as percentages.
+    - Optional `carbonstat.strategy` → stable name; otherwise the deployment name is used.
+    - `carbonstat.deadline` → deadline in seconds (falls back to 120 when absent).
+
+1. **Queue naming** – router and consumer derive queue names using `<service>.<namespace>.<strategy>`. Existing `high/mid/low` aliases are preserved for backwards compatibility via a lookup table.
+
+1. **Autoscaling hints** – the decision engine exports per-strategy request rates and credit stats so that KEDA triggers can scale down aggressive strategies when credit is insufficient.
 
 ## Metrics & observability
 

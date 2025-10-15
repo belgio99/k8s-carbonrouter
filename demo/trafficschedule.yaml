@@ -10,10 +10,11 @@ spec:
       cooldownPeriod: 60
       cpuUtilization: 80
   router:
-    debug: true #optional
+    debug: true
     autoscaling:
       minReplicaCount: 1
       maxReplicaCount: 15
+      cooldownPeriod: 60
       cpuUtilization: 80
     resources:
       requests:
@@ -23,7 +24,7 @@ spec:
         cpu: "1"
         memory: "512Mi"
   consumer:
-    debug: true #optional
+    debug: true
     autoscaling:
       minReplicaCount: 0
       maxReplicaCount: 15
@@ -36,3 +37,14 @@ spec:
       limits:
         cpu: "1"
         memory: "512Mi"
+  scheduler:
+    targetError: "0.05"
+    creditMin: "-0.5"
+    creditMax: "0.5"
+    creditWindow: 10
+    policy: forecast-aware
+    validFor: 300
+    discoveryInterval: 30
+    carbonTarget: "300"
+    carbonTimeout: 5000
+    carbonCacheTTL: 300

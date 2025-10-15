@@ -315,15 +315,15 @@ spec:
                 items:
                   description: FlavourRule describes routing weights for router consumers.
                   properties:
-                    deadlineSec:
-                      type: integer
                     flavourName:
                       type: string
+                    precision:
+                      type: integer
                     weight:
                       type: integer
                   required:
-                  - deadlineSec
                   - flavourName
+                  - precision
                   - weight
                   type: object
                 type: array

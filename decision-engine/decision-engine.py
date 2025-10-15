@@ -2,13 +2,13 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from flask import Flask, jsonify, request
 from prometheus_client import start_http_server
 
 from scheduler import SchedulerEngine
-from scheduler.models import SchedulerConfig
+from scheduler.models import SchedulerConfig, StrategyProfile, precision_key
 
 
 logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
@@ -31,9 +31,11 @@ SCHEDULER_CONFIG_KEYS = {
 }
 
 
-def _partition_payload(payload: Optional[Mapping[str, Any]]) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+def _partition_payload(
+    payload: Optional[Mapping[str, Any]]
+) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]], Optional[List[StrategyProfile]]]:
     if not payload or not isinstance(payload, Mapping):
-        return {}, {}
+        return {}, {}, None
 
     config_section: Mapping[str, Any]
     scheduler_section = payload.get("scheduler")
@@ -50,7 +52,11 @@ def _partition_payload(payload: Optional[Mapping[str, Any]]) -> tuple[Dict[str, 
     components_raw = payload.get("components")
     component_bounds = _normalise_component_bounds(components_raw)
 
-    return config_overrides, component_bounds
+    strategies: Optional[List[StrategyProfile]] = None
+    if "strategies" in payload:
+        strategies = _parse_strategies(payload.get("strategies"))
+
+    return config_overrides, component_bounds, strategies
 
 
 def _normalise_component_bounds(data: Any) -> Dict[str, Dict[str, int]]:
@@ -71,6 +77,59 @@ def _normalise_component_bounds(data: Any) -> Dict[str, Dict[str, int]]:
         if entries:
             bounds[component] = entries
     return bounds
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_strategies(data: Any) -> List[StrategyProfile]:
+    if not isinstance(data, list):
+        return []
+
+    strategies: List[StrategyProfile] = []
+    for item in data:
+        if not isinstance(item, Mapping):
+            continue
+
+        precision = _as_float(item.get("precision"), default=1.0)
+        if precision > 1.0:
+            precision /= 100.0
+        if precision < 0.0:
+            precision = 0.0
+        if precision > 1.0:
+            precision = 1.0
+
+        strategy_name = precision_key(precision)
+
+        carbon_intensity = _as_float(item.get("carbonIntensity"), default=0.0)
+
+        enabled_raw = item.get("enabled")
+        enabled = bool(enabled_raw) if enabled_raw is not None else True
+
+        annotations_raw = item.get("annotations")
+        annotations: Dict[str, str] = {}
+        if isinstance(annotations_raw, Mapping):
+            annotations = {
+                str(key): str(value)
+                for key, value in annotations_raw.items()
+                if key is not None and value is not None
+            }
+
+        strategies.append(
+            StrategyProfile(
+                name=str(strategy_name),
+                precision=precision,
+                carbon_intensity=carbon_intensity,
+                enabled=enabled,
+                annotations=annotations,
+            )
+        )
+
+    return strategies
 
 
 def _as_int(value: Any) -> Optional[int]:
@@ -96,6 +155,7 @@ def _build_engine(
     name: str,
     config_overrides: Optional[Dict[str, Any]] = None,
     component_bounds: Optional[Dict[str, Dict[str, int]]] = None,
+    strategies: Optional[List[StrategyProfile]] = None,
 ) -> SchedulerEngine:
     config = SchedulerConfig.from_env()
     if config_overrides:
@@ -105,6 +165,7 @@ def _build_engine(
         namespace=namespace,
         name=name,
         component_bounds=component_bounds,
+        strategies=strategies,
     )
 
 
@@ -117,12 +178,21 @@ class SchedulerSession:
         self._lock = threading.RLock()
         self._refresh_event = threading.Event()
         self._stop_event = threading.Event()
-        config_overrides, component_bounds = _partition_payload(payload)
-        self._engine = _build_engine(namespace, name, config_overrides, component_bounds)
+        config_overrides, component_bounds, strategies = _partition_payload(payload)
+        self._strategies: Optional[List[StrategyProfile]] = (
+            list(strategies) if strategies is not None else None
+        )
+        self._engine = _build_engine(
+            namespace,
+            name,
+            config_overrides,
+            component_bounds,
+            strategies=self._strategies,
+        )
         self._config_overrides = dict(config_overrides)
         self._component_bounds = component_bounds
         self._manual_schedule: Optional[Dict[str, Any]] = None
-        self._manual_deadline = 0.0
+        self._manual_expiry = 0.0
         self._schedule: Optional[Dict[str, Any]] = None
         self._thread = threading.Thread(
             target=self._run,
@@ -134,21 +204,34 @@ class SchedulerSession:
 
     def apply_overrides(self, payload: Dict[str, Any]) -> None:
         LOGGER.info("Applying overrides for %s/%s: %s", self.namespace, self.name, payload)
-        config_overrides, component_bounds = _partition_payload(payload)
-        engine = _build_engine(self.namespace, self.name, config_overrides, component_bounds)
+        config_overrides, component_bounds, strategies = _partition_payload(payload)
+        next_strategies: Optional[List[StrategyProfile]]
+        if strategies is not None:
+            next_strategies = list(strategies)
+        else:
+            next_strategies = self._strategies
+
+        engine = _build_engine(
+            self.namespace,
+            self.name,
+            config_overrides,
+            component_bounds,
+            strategies=next_strategies,
+        )
         with self._lock:
             self._engine = engine
             self._config_overrides = dict(config_overrides)
             self._component_bounds = component_bounds
+            self._strategies = next_strategies
             self._manual_schedule = None
-            self._manual_deadline = 0.0
+            self._manual_expiry = 0.0
             self._schedule = None
         self._refresh_event.set()
 
     def get_schedule(self) -> Dict[str, Any] | None:
         with self._lock:
             now = time.time()
-            if self._manual_schedule and self._manual_deadline > now:
+            if self._manual_schedule and self._manual_expiry > now:
                 return dict(self._manual_schedule)
             if self._schedule is None:
                 return None
@@ -158,7 +241,7 @@ class SchedulerSession:
         with self._lock:
             ttl = max(1, int(self._engine.config.valid_for))
             self._manual_schedule = dict(payload)
-            self._manual_deadline = time.time() + ttl
+            self._manual_expiry = time.time() + ttl
             self._schedule = dict(payload)
         self._refresh_event.set()
 
@@ -177,9 +260,7 @@ class SchedulerSession:
 
             with self._lock:
                 engine = self._engine
-                manual_active = (
-                    self._manual_schedule is not None and self._manual_deadline > time.time()
-                )
+                manual_active = self._manual_schedule is not None and self._manual_expiry > time.time()
 
             if manual_active:
                 continue
@@ -200,7 +281,7 @@ class SchedulerSession:
             with self._lock:
                 self._schedule = schedule
                 self._manual_schedule = None
-                self._manual_deadline = 0.0
+                self._manual_expiry = 0.0
 
     def _next_wait(self) -> float:
         with self._lock:

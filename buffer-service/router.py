@@ -42,6 +42,8 @@ METRICS_PORT: int = int(os.getenv("METRICS_PORT", "8001"))
 TARGET_SVC_NAME: str = os.getenv("TARGET_SVC_NAME", "unknown-svc").lower()
 TARGET_SVC_NAMESPACE: str = os.getenv("TARGET_SVC_NAMESPACE", "default").lower()
 
+RPC_TIMEOUT_SEC: float = float(os.getenv("RPC_TIMEOUT_SEC", "60"))
+
 # ────────────────────────────────────
 # Prometheus metrics
 # ────────────────────────────────────
@@ -165,19 +167,9 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
             for r in schedule.get("flavourRules", [])
             if r.get("flavourName")
         }
-        flavour_deadlines = {
-            str(r.get("flavourName")): int(r.get("deadlineSec", 60))
-            for r in schedule.get("flavourRules", [])
-            if r.get("flavourName")
-        }
         if not flavour_weights:
             flavour_weights = {
                 str(r.get("flavourName")): int(r.get("weight", 0))
-                for r in DEFAULT_SCHEDULE.get("flavourRules", [])
-                if r.get("flavourName")
-            }
-            flavour_deadlines = {
-                str(r.get("flavourName")): int(r.get("deadlineSec", 60))
                 for r in DEFAULT_SCHEDULE.get("flavourRules", [])
                 if r.get("flavourName")
             }
@@ -198,10 +190,6 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         debug(
             f"Selected routing: q_type={q_type}, flavour={flavour}, forced={bool(forced_flavour)}, urgent={urgent}"
         )
-        deadline_sec = flavour_deadlines.get(flavour, 60)
-        expiration_ms = int(deadline_sec * 1000)
-
-
         # ─── build payload ───
         payload = {
             "method": request.method,
@@ -232,7 +220,6 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
                     "namespace": TARGET_SVC_NAMESPACE,
                     "service": TARGET_SVC_NAME,
                 },
-                expiration=expiration_ms,
             ),
             routing_key="",  # ignorato dal headers-exchange
             mandatory=True,
@@ -243,12 +230,12 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         debug(
             "Published message: "
             f"headers={{q_type:{q_type}, flavour:{flavour}}}, "
-            f"correlation_id={correlation_id}, expiration_ms={expiration_ms}"
+            f"correlation_id={correlation_id}"
         )
 
         # ─── wait for RPC response ───
         try:
-            rabbit_msg = await asyncio.wait_for(response_future, timeout=deadline_sec)
+            rabbit_msg = await asyncio.wait_for(response_future, timeout=max(RPC_TIMEOUT_SEC, 1.0))
         except asyncio.TimeoutError as exc:
             rabbit_state["pending"].pop(correlation_id, None)
             HTTP_LATENCY.labels(q_type, flavour).observe(time.perf_counter() - start_ts)
