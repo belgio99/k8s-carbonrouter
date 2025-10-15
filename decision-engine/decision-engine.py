@@ -239,7 +239,7 @@ def _build_engine(
         namespace=namespace,
         name=name,
         component_bounds=component_bounds,
-        strategies=flavours,
+        flavours=flavours,
     )
 
 
@@ -287,7 +287,7 @@ class SchedulerSession:
             name,
             config_overrides,
             component_bounds,
-            strategies=self._flavours,
+            flavours=self._flavours,
         )
         self._config_overrides = dict(config_overrides)
         self._component_bounds = component_bounds
@@ -332,7 +332,7 @@ class SchedulerSession:
             self.name,
             config_overrides,
             component_bounds,
-            strategies=next_flavours,
+            flavours=next_flavours,
         )
         
         # Update state atomically
