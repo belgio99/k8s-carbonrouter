@@ -1,4 +1,16 @@
-"""Scheduler engine orchestrating policies, ledger, and forecasts."""
+"""
+Scheduler Engine - Core Scheduling Orchestration
+
+The SchedulerEngine is the main orchestrator that:
+1. Manages precision strategies (low/medium/high power variants)
+2. Maintains quality credit ledger
+3. Fetches carbon intensity forecasts
+4. Evaluates scheduling policies to compute traffic distributions
+5. Exports Prometheus metrics for monitoring
+
+Each TrafficSchedule gets its own SchedulerEngine instance with
+independent configuration and state.
+"""
 
 from __future__ import annotations
 
@@ -28,9 +40,15 @@ _LOGGER = logging.getLogger("scheduler")
 
 
 class StrategyRegistry:
-    """In-memory registry of available strategies."""
+    """
+    Thread-safe in-memory registry of precision strategies.
+    
+    Stores available StrategyProfile instances (e.g., precision-30, precision-50,
+    precision-100) and provides synchronized access for policy evaluation.
+    """
 
     def __init__(self, strategies: Optional[Iterable[StrategyProfile]] = None) -> None:
+        """Initialize registry with optional initial strategies."""
         self._lock = threading.Lock()
         self._strategies: Dict[str, StrategyProfile] = {}
         if strategies:
@@ -38,25 +56,33 @@ class StrategyRegistry:
                 self._strategies[strategy.name] = strategy
 
     def list(self) -> List[StrategyProfile]:
+        """Get list of all registered strategies."""
         with self._lock:
             return list(self._strategies.values())
 
     def replace(self, strategies: Iterable[StrategyProfile]) -> None:
+        """Replace all strategies with new set."""
         with self._lock:
             self._strategies = {s.name: s for s in strategies}
 
     def upsert(self, strategy: StrategyProfile) -> None:
+        """Add or update a single strategy."""
         with self._lock:
             self._strategies[strategy.name] = strategy
 
 
+# Mapping of policy names to implementation classes
 _POLICY_BUILDERS: Dict[str, type[SchedulerPolicy]] = {
     "credit-greedy": CreditGreedyPolicy,
     "forecast-aware": ForecastAwarePolicy,
     "precision-tier": PrecisionTierPolicy,
 }
 
-# Global Prometheus metrics reused across scheduler sessions to avoid duplicate registrations.
+# ============================================================================
+# Prometheus Metrics
+# Global metrics shared across all scheduler sessions to avoid duplicate
+# registrations. Labeled by namespace/schedule to distinguish instances.
+# ============================================================================
 _METRIC_FLAVOUR = Gauge(
     "schedule_flavour_weight",
     "Weight per flavour",
@@ -108,6 +134,16 @@ def _merge_with_fallback(
     primary: Iterable[StrategyProfile],
     fallback: Iterable[StrategyProfile],
 ) -> List[StrategyProfile]:
+    """
+    Merge two strategy lists, with primary overriding fallback.
+    
+    Args:
+        primary: Preferred strategies (from operator)
+        fallback: Default strategies (hardcoded)
+        
+    Returns:
+        Merged list sorted by precision (descending)
+    """
     merged: Dict[str, StrategyProfile] = {strategy.name: strategy for strategy in fallback}
     for strategy in primary:
         merged[strategy.name] = strategy
@@ -115,7 +151,18 @@ def _merge_with_fallback(
 
 
 class SchedulerEngine:
-    """High-level orchestrator for the credit-based scheduler."""
+    """
+    Main scheduler engine coordinating carbon-aware traffic scheduling.
+    
+    Responsibilities:
+    - Manage precision strategy registry
+    - Track quality credits via ledger
+    - Fetch carbon intensity forecasts
+    - Evaluate scheduling policy to compute traffic distribution
+    - Export Prometheus metrics
+    
+    Each TrafficSchedule resource gets its own SchedulerEngine instance.
+    """
 
     def __init__(
         self,
@@ -125,6 +172,16 @@ class SchedulerEngine:
         component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
         strategies: Optional[Iterable[StrategyProfile]] = None,
     ) -> None:
+        """
+        Initialize scheduler engine.
+        
+        Args:
+            config: Scheduler configuration (defaults from environment if None)
+            namespace: Kubernetes namespace of TrafficSchedule
+            name: Name of TrafficSchedule resource
+            component_bounds: Min/max replica constraints per component
+            strategies: Precision strategies to use (defaults if None)
+        """
         self.namespace = namespace
         self.name = name
         self.component_bounds: Dict[str, Dict[str, int]] = {}

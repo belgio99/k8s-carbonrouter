@@ -1,4 +1,14 @@
-"""Data models used by the carbon-aware scheduler."""
+"""
+Data Models for Carbon-Aware Scheduler
+
+This module defines the core data structures used throughout the scheduler:
+- StrategyProfile: Precision/quality variants (e.g., low, medium, high power)
+- ForecastPoint/Snapshot: Carbon intensity and demand forecasts
+- SchedulerConfig: Runtime configuration parameters
+- ScheduleDecision: Final traffic distribution schedule
+- PolicyResult: Output from scheduling policies
+- ScalingDirective: Autoscaling recommendations
+"""
 
 from __future__ import annotations
 
@@ -9,35 +19,67 @@ from typing import Dict, List, Mapping, Optional
 
 
 def _clamp(value: float, low: float, high: float) -> float:
+    """Clamp value to the range [low, high]."""
     return max(low, min(value, high))
 
 
 def precision_key(precision: float) -> str:
-    """Return a stable name for a precision ratio."""
-
+    """
+    Generate a standard strategy name from precision value.
+    
+    Args:
+        precision: Precision ratio (0.0-1.0)
+        
+    Returns:
+        Strategy name like "precision-30" for 0.3
+    """
     clamped = _clamp(precision, 0.0, 1.0)
     return f"precision-{int(round(clamped * 100))}"
 
 
 @dataclass
 class StrategyProfile:
-    """Represents a runnable strategy variant for the target service."""
+    """
+    Represents a precision/quality variant for the target service.
+    
+    Each strategy corresponds to a deployment with a specific precision level
+    (e.g., low-power model at 30% precision, high-power at 100% precision).
+    
+    Attributes:
+        name: Strategy identifier (e.g., "precision-30")
+        precision: Quality level relative to baseline (0.0-1.0)
+        carbon_intensity: Estimated carbon cost per request (gCO2eq)
+        enabled: Whether this strategy is currently available
+        annotations: Metadata from Kubernetes deployment labels
+    """
 
     name: str
-    precision: float = 1.0  # relative to baseline strategy
-    carbon_intensity: float = 0.0  # gCO2eq per request (relative delta)
+    precision: float = 1.0  # Quality level (0.0-1.0)
+    carbon_intensity: float = 0.0  # gCO2eq per request
     enabled: bool = True
     annotations: Mapping[str, str] = field(default_factory=dict)
 
     def expected_error(self) -> float:
-        """Return the expected relative error contributed by this strategy."""
-
+        """
+        Calculate the expected quality error for this strategy.
+        
+        Returns:
+            Error ratio (0.0 = perfect, 1.0 = worst)
+        """
         return max(0.0, 1.0 - self.precision)
 
 
 @dataclass
 class ForecastPoint:
-    """Carbon forecast for a time interval."""
+    """
+    Carbon intensity forecast for a specific time interval.
+    
+    Attributes:
+        start: Beginning of forecast period
+        end: End of forecast period
+        forecast: Predicted carbon intensity (gCO2eq/kWh)
+        index: Carbon intensity index/category (e.g., "low", "medium", "high")
+    """
 
     start: datetime
     end: datetime
@@ -45,6 +87,7 @@ class ForecastPoint:
     index: Optional[str] = None
 
     def as_dict(self) -> Dict[str, object]:
+        """Serialize forecast point to dictionary."""
         return {
             "from": self.start.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "to": self.end.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -55,7 +98,22 @@ class ForecastPoint:
 
 @dataclass
 class ForecastSnapshot:
-    """Carbon intensity and demand forecasts for the next time window."""
+    """
+    Snapshot of carbon intensity and demand forecasts.
+    
+    Contains current and next-period forecasts used for scheduling decisions.
+    The schedule field provides a longer-term forecast for planning.
+    
+    Attributes:
+        intensity_now: Current carbon intensity (gCO2eq/kWh)
+        intensity_next: Next period carbon intensity
+        index_now: Current carbon intensity category
+        index_next: Next period carbon intensity category
+        demand_now: Current workload demand estimate
+        demand_next: Next period demand estimate
+        generated_at: Timestamp when forecast was generated
+        schedule: Extended forecast schedule for future periods
+    """
 
     intensity_now: Optional[float] = None
     intensity_next: Optional[float] = None
@@ -69,7 +127,24 @@ class ForecastSnapshot:
 
 @dataclass
 class SchedulerConfig:
-    """Runtime configuration knobs loaded from the environment."""
+    """
+    Runtime configuration for the scheduler.
+    
+    Loaded from environment variables with sensible defaults.
+    Can be overridden via API for specific TrafficSchedules.
+    
+    Attributes:
+        target_error: Target quality error threshold (0.0-1.0)
+        credit_min: Minimum credit balance (quality debt limit)
+        credit_max: Maximum credit balance (quality surplus limit)
+        smoothing_window: Time window for credit velocity smoothing (seconds)
+        policy_name: Scheduling policy to use (e.g., "credit-greedy", "forecast-aware")
+        valid_for: Schedule validity period (seconds)
+        discovery_interval: How often to refresh strategy list (seconds)
+        carbon_target: Carbon API target region (e.g., "national", "local")
+        carbon_timeout: Timeout for carbon API requests (seconds)
+        carbon_cache_ttl: Cache TTL for carbon data (seconds)
+    """
 
     target_error: float = 0.05
     credit_min: float = -0.5
@@ -84,6 +159,12 @@ class SchedulerConfig:
 
     @classmethod
     def from_env(cls) -> "SchedulerConfig":
+        """
+        Load configuration from environment variables.
+        
+        Returns:
+            SchedulerConfig instance with values from environment
+        """
         return cls(
             target_error=float(os.getenv("TARGET_ERROR", "0.05")),
             credit_min=float(os.getenv("CREDIT_MIN", "-0.5")),
@@ -98,6 +179,7 @@ class SchedulerConfig:
         )
 
     def clone(self) -> "SchedulerConfig":
+        """Create a deep copy of this configuration."""
         return SchedulerConfig(
             target_error=self.target_error,
             credit_min=self.credit_min,
@@ -112,6 +194,12 @@ class SchedulerConfig:
         )
 
     def apply_overrides(self, overrides: Mapping[str, object]) -> None:
+        """
+        Apply configuration overrides in-place.
+        
+        Args:
+            overrides: Dictionary of configuration keys and values to override
+        """
         if not overrides:
             return
         if "targetError" in overrides and overrides["targetError"] is not None:
@@ -152,14 +240,25 @@ class SchedulerConfig:
 
 @dataclass
 class PolicyDiagnostics:
-    """Structured diagnostics exposed alongside the published schedule."""
+    """
+    Diagnostic information from policy evaluation.
+    
+    Exposes internal policy state for debugging and monitoring.
+    """
 
     fields: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
 class PolicyResult:
-    """Outcome of a policy evaluation."""
+    """
+    Result of a scheduling policy evaluation.
+    
+    Attributes:
+        weights: Traffic distribution weights by strategy name (0.0-1.0)
+        avg_precision: Weighted average precision of the schedule
+        diagnostics: Policy-specific diagnostic data
+    """
 
     weights: Dict[str, float]
     avg_precision: float
@@ -168,7 +267,17 @@ class PolicyResult:
 
 @dataclass
 class ScalingDirective:
-    """Processing throttle recommendations for downstream autoscaling."""
+    """
+    Autoscaling recommendations based on carbon intensity and quality credits.
+    
+    Provides throttling signals to KEDA/HPA for adaptive resource scaling.
+    
+    Attributes:
+        throttle: Overall processing throttle (0.0-1.0)
+        credits_ratio: Credit-based scaling factor (0.0-1.0)
+        intensity_ratio: Carbon intensity-based scaling factor (0.0-1.0)
+        ceilings: Maximum replica counts per component
+    """
 
     throttle: float
     credits_ratio: float
@@ -192,8 +301,26 @@ class ScalingDirective:
         min_throttle: float = 0.2,
         intensity_floor: float = 150.0,
         intensity_ceiling: float = 350.0,
-    component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
+        component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
     ) -> "ScalingDirective":
+        """
+        Compute scaling directive from current system state.
+        
+        Combines credit balance and carbon intensity to determine throttling level.
+        Lower credits or higher carbon intensity results in more aggressive throttling.
+        
+        Args:
+            credit_balance: Current quality credit balance
+            config: Scheduler configuration
+            forecast: Carbon intensity forecast
+            min_throttle: Minimum throttle value (prevents over-throttling)
+            intensity_floor: Carbon intensity floor for scaling (gCO2eq/kWh)
+            intensity_ceiling: Carbon intensity ceiling for scaling (gCO2eq/kWh)
+            component_bounds: Min/max replica constraints per component
+            
+        Returns:
+            ScalingDirective with computed throttle and replica ceilings
+        """
         span = config.credit_max - config.credit_min
         if span <= 0:
             credits_ratio = 1.0
@@ -246,7 +373,24 @@ class ScalingDirective:
 
 @dataclass
 class ScheduleDecision:
-    """Final schedule shared with the router and CRD status."""
+    """
+    Final scheduling decision to be published.
+    
+    Contains the complete traffic distribution schedule with metadata,
+    diagnostics, and autoscaling directives. This is the primary output
+    of the scheduler consumed by the router and Kubernetes operator.
+    
+    Attributes:
+        flavour_weights: Traffic weights by strategy (0-100, sum to 100)
+        flavour_rules: Routing rules for each strategy
+        strategies: Metadata for each precision strategy
+        valid_until: Schedule expiration timestamp
+        credits: Quality credit ledger state
+        policy_name: Name of policy that generated this schedule
+        diagnostics: Policy-specific diagnostic values
+        avg_precision: Weighted average precision of the schedule
+        scaling: Autoscaling recommendations
+    """
 
     flavour_weights: Dict[str, int]
     flavour_rules: List[Dict[str, object]]
@@ -259,7 +403,12 @@ class ScheduleDecision:
     scaling: ScalingDirective
 
     def as_dict(self) -> Dict[str, object]:
-        """Return a serialisable representation expected by existing consumers."""
+        """
+        Serialize schedule to dictionary for JSON API response.
+        
+        Returns:
+            Dictionary with all schedule fields in API format
+        """
 
         return {
             "flavourWeights": self.flavour_weights,
@@ -284,7 +433,24 @@ class ScheduleDecision:
         scaling: ScalingDirective,
         forecast: ForecastSnapshot,
     ) -> "ScheduleDecision":
-        """Assemble a schedule decision from policy output."""
+        """
+        Construct a complete schedule decision from policy output.
+        
+        Normalizes policy weights to integer percentages (0-100), computes
+        validity period, and packages all metadata for API consumers.
+        
+        Args:
+            policy_result: Raw output from scheduling policy
+            strategies: Available precision strategies
+            config: Scheduler configuration
+            credit_balance: Current quality credit balance
+            credit_velocity: Rate of credit change
+            scaling: Autoscaling directives
+            forecast: Carbon intensity forecast (used for validity period)
+            
+        Returns:
+            Complete ScheduleDecision ready for publication
+        """
 
         valid_until = datetime.utcnow() + timedelta(seconds=config.valid_for)
         now_utc = datetime.utcnow()
