@@ -57,7 +57,37 @@ The dashboard includes the following panels:
 
 * **Type**: Time Series (Bar Chart)
 * **Description**: Frequency of selection for different policy strategies
-* **Metric**: `rate(scheduler_policy_choice_total[5m])`
+* **Metric**: `sum by (strategy) (rate(scheduler_policy_choice_total[5m]))`
+
+### 9. Active Policy
+
+* **Type**: Table
+* **Description**: Displays the currently active scheduling policy (e.g., "forecast-aware")
+* **Metric**: Derived from `scheduler_credit_balance` labels
+
+### 10. Router Request Rate by Flavour
+
+* **Type**: Time Series
+* **Description**: HTTP request rate handled by the router, broken down by precision flavour
+* **Metric**: `sum by (flavour) (rate(router_http_requests_total[5m]))`
+
+### 11. Consumer Message Rate by Flavour
+
+* **Type**: Time Series
+* **Description**: AMQP messages consumed per second, grouped by flavour
+* **Metric**: `sum by (flavour) (rate(consumer_messages_total[5m]))`
+
+### 12. Actual Replicas by Precision
+
+* **Type**: Time Series
+* **Description**: Current replica count from kube-state-metrics, grouped by precision label
+* **Metric**: `sum by (label_carbonstat_precision) (kube_deployment_status_replicas)`
+
+### 13. Router Request Latency
+
+* **Type**: Time Series
+* **Description**: Request latency percentiles (p50, p95, p99) from the router
+* **Metrics**: `histogram_quantile` on `router_request_duration_seconds_bucket`
 
 ## Automatic Installation
 
@@ -93,7 +123,7 @@ The dashboard will be automatically loaded into Grafana via the sidecar that mon
 The dashboard includes three variables for filtering data:
 
 * **Datasource**: Prometheus data source to use
-* **Namespace**: Kubernetes namespace where the TrafficSchedule resides
+* **Namespace**: Kubernetes namespace where the TrafficSchedule resides (default: `carbonstat`)
 * **Schedule**: Specific TrafficSchedule resource name to monitor
 
 These variables are automatically populated from Prometheus data and allow visualization of multiple TrafficSchedules coexisting in the cluster.
