@@ -140,7 +140,7 @@ func (r *TrafficScheduleReconciler) discoverFlavours(ctx context.Context, namesp
 	}
 
 	sort.Slice(flavours, func(i, j int) bool {
-		return strategies[i].Precision > strategies[j].Precision
+		return flavours[i].Precision > flavours[j].Precision
 	})
 
 	return flavours, nil
@@ -173,7 +173,7 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("No carbon flavours discovered – scheduler will use defaults")
 	}
 
-	payload := buildSchedulerConfigPayload(existing.Spec, strategies)
+	payload := buildSchedulerConfigPayload(existing.Spec, flavours)
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		log.Error(err, "Failed to serialise scheduler payload")
@@ -229,7 +229,7 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// 2) Temp struct to decode the response
 	var remote struct {
-		Strategies []struct {
+		Flavours []struct {
 			Name            string  `json:"name"`
 			Precision       int     `json:"precision"`
 			Weight          int     `json:"weight"`
@@ -287,9 +287,9 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		status.EffectiveReplicaCeilings = remote.Processing.Ceilings
 	}
 	for _, flavour := range remote.Flavours {
-		status.Flavours = append(status.Flavours, schedulingv1alpha1.StrategyDecision{
-			Precision: strategy.Precision,
-			Weight:    strategy.Weight,
+		status.Flavours = append(status.Flavours, schedulingv1alpha1.FlavourDecision{
+			Precision: flavour.Precision,
+			Weight:    flavour.Weight,
 		})
 	}
 	if t, err := time.Parse(time.RFC3339, remote.ValidUntilISO); err == nil {
@@ -369,7 +369,7 @@ func pushSchedulerConfig(namespace, name string, payload map[string]interface{})
 	return nil
 }
 
-func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, strategies []schedulerFlavour) map[string]interface{} {
+func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, flavours []schedulerFlavour) map[string]interface{} {
 	cfg := map[string]interface{}{}
 	s := spec.Scheduler
 
@@ -413,7 +413,7 @@ func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, st
 	}
 
 	if len(flavours) > 0 {
-		cfg["flavours"] = strategies
+		cfg["flavours"] = flavours
 	}
 
 	return cfg

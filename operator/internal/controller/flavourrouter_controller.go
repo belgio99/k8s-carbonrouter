@@ -177,7 +177,7 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	ts := tsList.Items[0]
 	tsSpec := ts.Spec
 	trafficschedule := ts.Status
-	precisionList := collectPrecisions(trafficschedule.Strategies)
+	precisionList := collectPrecisions(trafficschedule.Flavours)
 
 	deploymentsByPrecision, err := r.discoverStrategyDeployments(ctx, &svc)
 	if err != nil {
