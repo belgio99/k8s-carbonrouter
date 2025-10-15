@@ -8,6 +8,6 @@ metadata:
     {{- include "carbonrouter-umbrella.labels" . | nindent 4 }}
     grafana_dashboard: "1"
 data:
-  trafficschedule-dashboard.json: |-
-{{ .Files.Get "dashboards/trafficschedule-dashboard.json" | indent 4 }}
+  trafficschedule-dashboard.json: |
+{{ .Files.Get "dashboards/trafficschedule-dashboard.json" | nindent 4 }}
 {{- end }}

@@ -106,7 +106,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "schedule_flavour_weight{namespace=\"$namespace\", schedule=\"$schedule\"}",
+          "expr": "max by (flavour) (schedule_flavour_weight{namespace=\"$namespace\", schedule=\"$schedule\"})",
           "legendFormat": "{{flavour}}%",
           "range": true,
           "refId": "A"
@@ -180,7 +180,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=\"now\"}",
+          "expr": "max(scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=\"now\"})",
           "legendFormat": "Now",
           "range": true,
           "refId": "A"
@@ -254,7 +254,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=\"next\"}",
+          "expr": "max(scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=\"next\"})",
           "legendFormat": "Next",
           "range": true,
           "refId": "A"
@@ -359,7 +359,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_credit_balance{namespace=\"$namespace\", schedule=\"$schedule\"}",
+          "expr": "max(scheduler_credit_balance{namespace=\"$namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Balance",
           "range": true,
           "refId": "A"
@@ -370,7 +370,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_credit_velocity{namespace=\"$namespace\", schedule=\"$schedule\"}",
+          "expr": "max(scheduler_credit_velocity{namespace=\"$namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Velocity",
           "range": true,
           "refId": "B"
@@ -446,7 +446,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_avg_precision{namespace=\"$namespace\", schedule=\"$schedule\"}",
+          "expr": "max(scheduler_avg_precision{namespace=\"$namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Avg Precision",
           "range": true,
           "refId": "A"
@@ -522,7 +522,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_processing_throttle{namespace=\"$namespace\", schedule=\"$schedule\"}",
+          "expr": "max(scheduler_processing_throttle{namespace=\"$namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Throttle",
           "range": true,
           "refId": "A"
@@ -615,7 +615,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_effective_replica_ceiling{namespace=\"$namespace\", schedule=\"$schedule\"}",
+          "expr": "max by (component) (scheduler_effective_replica_ceiling{namespace=\"$namespace\", schedule=\"$schedule\"})",
           "legendFormat": "{{component}}",
           "range": true,
           "refId": "A"
