@@ -25,16 +25,17 @@ class CreditLedger:
     Tracks quality credit balance over time.
     
     The ledger computes:
-    - Balance: Cumulative difference between target and realized error
+    - Balance: Cumulative difference between target and realized error (range: -1.0 to +1.0)
     - Velocity: Average rate of credit change (trend indicator)
     
     Positive balance = Quality surplus (can use cheaper strategies)
     Negative balance = Quality deficit (need higher precision strategies)
+    Zero balance = Neutral state (quality at target level)
     
     Attributes:
-        target_error: Target quality error threshold (e.g., 0.05 = 5% error)
-        credit_min: Minimum allowed credit balance (quality debt limit)
-        credit_max: Maximum allowed credit balance (quality surplus cap)
+        target_error: Target quality error threshold (e.g., 0.1 = 10% error)
+        credit_min: Minimum allowed credit balance (quality debt limit, typically -1.0)
+        credit_max: Maximum allowed credit balance (quality surplus cap, typically +1.0)
         window_size: Number of recent requests for velocity calculation
     """
 
@@ -60,7 +61,7 @@ class CreditLedger:
         Calculates:
         1. Realized error from precision (error = 1 - precision)
         2. Credit delta (target_error - realized_error)
-        3. Updates balance, clamped to [credit_min, credit_max]
+        3. Updates balance, clamped to [credit_min, credit_max] (typically -1.0 to +1.0)
         
         Args:
             realised_precision: Actual precision of completed request (0.0-1.0)
@@ -69,9 +70,10 @@ class CreditLedger:
             Updated credit balance
             
         Example:
-            If target_error=0.05 and realized_precision=0.97:
-            - realized_error = 1 - 0.97 = 0.03
-            - delta = 0.05 - 0.03 = +0.02 (credit surplus)
+            If target_error=0.1 and realized_precision=0.95:
+            - realized_error = 1 - 0.95 = 0.05
+            - delta = 0.1 - 0.05 = +0.05 (credit surplus)
+            After 20 such requests: balance = 0.05 × 20 = +1.0 (max credit)
         """
         realised_error = max(0.0, 1.0 - realised_precision)
         delta = self.target_error - realised_error

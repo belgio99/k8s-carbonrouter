@@ -84,11 +84,11 @@ Every schedule payload conforms to the following structure:
   ],
   "validUntil": "2025-10-09T12:34:00Z",
   "credits": {
-    "balance": 0.18,
-    "velocity": -0.02,
-    "target": 0.05,
-    "min": -0.5,
-    "max": 0.5
+    "balance": 0.36,
+    "velocity": -0.04,
+    "target": 0.1,
+    "min": -1.0,
+    "max": 1.0
   },
   "policy": {"name": "forecast-aware"},
   "processing": {

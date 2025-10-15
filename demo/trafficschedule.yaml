@@ -38,9 +38,9 @@ spec:
         cpu: "1"
         memory: "512Mi"
   scheduler:
-    targetError: "0.05"
-    creditMin: "-0.5"
-    creditMax: "0.5"
+    targetError: "0.1"
+    creditMin: "-1.0"
+    creditMax: "1.0"
     creditWindow: 10
     policy: forecast-aware
     validFor: 300

@@ -36,9 +36,9 @@ flavour weights, diagnostics, processing throttle, and credit statistics.
 | ---- | ------- | ----------- |
 | `DEFAULT_SCHEDULE_NAMESPACE` | `default` | Namespace for the implicit `/schedule` endpoint. |
 | `DEFAULT_SCHEDULE_NAME` | `default` | `TrafficSchedule` name for the implicit `/schedule` endpoint. |
-| `TARGET_ERROR` | `0.05` | Allowed mean error between requested precision and realised precision. |
-| `CREDIT_MIN` | `-0.5` | Lower bound for the credit ledger. |
-| `CREDIT_MAX` | `0.5` | Upper bound for the credit ledger. |
+| `TARGET_ERROR` | `0.1` | Allowed mean error between requested precision and realised precision (range: 0.0-1.0). |
+| `CREDIT_MIN` | `-1.0` | Lower bound for the credit ledger (quality debt limit). |
+| `CREDIT_MAX` | `1.0` | Upper bound for the credit ledger (quality surplus cap). |
 | `CREDIT_WINDOW` | `300` | Smoothing window (seconds) for the credit ledger. |
 | `SCHEDULER_POLICY` | `credit-greedy` | Active policy (`credit-greedy`, `forecast-aware`, `precision-tier`). |
 | `SCHEDULE_VALID_FOR` | `60` | Duration (seconds) a schedule remains valid. |

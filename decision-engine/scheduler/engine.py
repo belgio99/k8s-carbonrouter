@@ -228,9 +228,9 @@ class SchedulerEngine:
 
     def _load_config(self) -> SchedulerConfig:
         return SchedulerConfig(
-            target_error=float(os.getenv("TARGET_ERROR", "0.05")),
-            credit_min=float(os.getenv("CREDIT_MIN", "-0.5")),
-            credit_max=float(os.getenv("CREDIT_MAX", "0.5")),
+            target_error=float(os.getenv("TARGET_ERROR", "0.1")),
+            credit_min=float(os.getenv("CREDIT_MIN", "-1.0")),
+            credit_max=float(os.getenv("CREDIT_MAX", "1.0")),
             smoothing_window=int(os.getenv("CREDIT_WINDOW", "300")),
             policy_name=os.getenv("SCHEDULER_POLICY", "credit-greedy"),
             valid_for=int(os.getenv("SCHEDULE_VALID_FOR", "60")),

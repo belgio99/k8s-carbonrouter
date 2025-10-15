@@ -134,9 +134,9 @@ class SchedulerConfig:
     Can be overridden via API for specific TrafficSchedules.
     
     Attributes:
-        target_error: Target quality error threshold (0.0-1.0)
-        credit_min: Minimum credit balance (quality debt limit)
-        credit_max: Maximum credit balance (quality surplus limit)
+        target_error: Target quality error threshold (0.0-1.0, default 0.1 = 10% error)
+        credit_min: Minimum credit balance (quality debt limit, range: -1.0 to 0.0)
+        credit_max: Maximum credit balance (quality surplus limit, range: 0.0 to 1.0)
         smoothing_window: Time window for credit velocity smoothing (seconds)
         policy_name: Scheduling policy to use (e.g., "credit-greedy", "forecast-aware")
         valid_for: Schedule validity period (seconds)
@@ -146,9 +146,9 @@ class SchedulerConfig:
         carbon_cache_ttl: Cache TTL for carbon data (seconds)
     """
 
-    target_error: float = 0.05
-    credit_min: float = -0.5
-    credit_max: float = 0.5
+    target_error: float = 0.1
+    credit_min: float = -1.0
+    credit_max: float = 1.0
     smoothing_window: int = 300  # seconds
     policy_name: str = "credit-greedy"
     valid_for: int = 60  # seconds per schedule publication
@@ -166,9 +166,9 @@ class SchedulerConfig:
             SchedulerConfig instance with values from environment
         """
         return cls(
-            target_error=float(os.getenv("TARGET_ERROR", "0.05")),
-            credit_min=float(os.getenv("CREDIT_MIN", "-0.5")),
-            credit_max=float(os.getenv("CREDIT_MAX", "0.5")),
+            target_error=float(os.getenv("TARGET_ERROR", "0.1")),
+            credit_min=float(os.getenv("CREDIT_MIN", "-1.0")),
+            credit_max=float(os.getenv("CREDIT_MAX", "1.0")),
             smoothing_window=int(os.getenv("CREDIT_WINDOW", "300")),
             policy_name=os.getenv("SCHEDULER_POLICY", "credit-greedy"),
             valid_for=int(os.getenv("SCHEDULE_VALID_FOR", "60")),
