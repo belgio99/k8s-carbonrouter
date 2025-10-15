@@ -36,19 +36,20 @@ The dashboard includes the following panels:
 ### 4. Carbon Intensity Forecast Timeline
 
 * **Type**: Time Series (Points)
-* **Description**: Extended carbon intensity forecast up to 48 hours ahead. Each point represents a forecast value, labeled with its horizon offset (e.g., "0.5h ahead", "1.0h ahead").
-* **Metric**: `scheduler_forecast_intensity{horizon=~"[0-9]+\\.[0-9]+h"}`
-* **Note**: The visualization uses points instead of lines to clearly show discrete forecast values. Each series represents a different time horizon (e.g., "0.5h", "1.0h", "2.5h").
+* **Description**: Extended carbon intensity forecast up to 48 hours ahead. Each point represents a forecast value plotted at its actual target time in the future.
+* **Metric**: `scheduler_forecast_intensity_timestamped{horizon=~"[0-9]+\\.[0-9]+h"}`
+* **Note**: This metric uses explicit timestamps, so each forecast point is plotted at the time it predicts (not at the current time). The visualization uses points to clearly show discrete forecast values.
 
 ### 5. Forecast Schedule (Target Times)
 
 * **Type**: Table
 * **Description**: Displays the forecast schedule in tabular format, showing the horizon offset and corresponding carbon intensity forecast
-* **Metric**: `scheduler_forecast_intensity{horizon=~"[0-9]+\\.[0-9]+h"}` (instant query)
+* **Metric**: `scheduler_forecast_intensity_timestamped{horizon=~"[0-9]+\\.[0-9]+h"}` (instant query)
 * **Columns**:
+  * **Time**: The actual target time when the forecast applies (extracted from the metric timestamp)
   * **Horizon**: Time offset from now (e.g., "0.5h", "1.0h")
   * **Forecast (gCO2/kWh)**: Predicted carbon intensity value with color-coded background based on thresholds
-* **Note**: This table provides a clear view of when each forecast applies by showing the horizon offset. To calculate the actual target time, add the horizon to the current time shown in the "now" gauge.
+* **Note**: The Time column shows the exact future time when each forecast applies, making it easy to see the prediction timeline.
 
 ### 6. Credit Ledger (Balance & Velocity)
 

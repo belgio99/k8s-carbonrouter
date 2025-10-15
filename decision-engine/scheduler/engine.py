@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from prometheus_client import Counter, Gauge
+from prometheus_client.core import GaugeMetricFamily, REGISTRY
+from prometheus_client.registry import Collector
 
 from .ledger import CreditLedger
 from .models import (
@@ -128,6 +130,67 @@ _METRIC_FORECAST = Gauge(
     "Carbon intensity forecast",
     ["namespace", "schedule", "policy", "horizon"],
 )
+
+
+class ForecastCollector(Collector):
+    """
+    Custom Prometheus collector that exports forecast metrics with explicit timestamps.
+    
+    This allows forecast data to be plotted at their target time in the future
+    rather than at the current scrape time.
+    """
+    
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._forecasts: Dict[tuple, tuple[float, float]] = {}  # (labels) -> (value, timestamp)
+    
+    def set_forecast(self, namespace: str, schedule: str, policy: str, horizon: str, 
+                     value: float, timestamp: float) -> None:
+        """Set a forecast value with an explicit timestamp."""
+        with self._lock:
+            key = (namespace, schedule, policy, horizon)
+            self._forecasts[key] = (value, timestamp)
+    
+    def clear_old_forecasts(self, cutoff_time: float) -> None:
+        """Remove forecasts older than the cutoff time."""
+        with self._lock:
+            self._forecasts = {
+                key: (val, ts) 
+                for key, (val, ts) in self._forecasts.items() 
+                if ts > cutoff_time
+            }
+    
+    def collect(self):
+        """Generate metrics for Prometheus scraping."""
+        with self._lock:
+            if not self._forecasts:
+                return
+            
+            # Create a GaugeMetricFamily for timestamped forecasts
+            family = GaugeMetricFamily(
+                'scheduler_forecast_intensity_timestamped',
+                'Carbon intensity forecast with target timestamp',
+                labels=['namespace', 'schedule', 'policy', 'horizon']
+            )
+            
+            for (namespace, schedule, policy, horizon), (value, timestamp) in self._forecasts.items():
+                family.add_metric(
+                    [namespace, schedule, policy, horizon],
+                    value,
+                    timestamp=timestamp * 1000  # Prometheus expects milliseconds
+                )
+            
+            yield family
+
+
+# Global forecast collector instance
+_FORECAST_COLLECTOR = ForecastCollector()
+
+try:
+    REGISTRY.register(_FORECAST_COLLECTOR)
+except Exception:
+    # Already registered, skip
+    pass
 
 
 def _merge_with_fallback(
@@ -342,15 +405,20 @@ class SchedulerEngine:
         for strategy, weight in policy_result.weights.items():
             self._metric_policy_choice.labels(self.namespace, self.name, policy, strategy).inc(weight)
 
-        # Export current and next forecasts with legacy labels
+        # Export current and next forecasts with legacy labels (no timestamp)
         if forecast.intensity_now is not None:
             self._metric_forecast.labels(self.namespace, self.name, policy, "now").set(forecast.intensity_now)
         if forecast.intensity_next is not None:
             self._metric_forecast.labels(self.namespace, self.name, policy, "next").set(forecast.intensity_next)
         
-        # Export extended forecast schedule with hours_ahead labels
+        # Export extended forecast schedule with explicit timestamps
         if forecast.schedule:
             now = datetime.now(timezone.utc)
+            now_ts = now.timestamp()
+            
+            # Clean up old forecasts (older than 1 hour ago)
+            _FORECAST_COLLECTOR.clear_old_forecasts(now_ts - 3600)
+            
             for point in forecast.schedule:
                 if point.forecast is not None:
                     # Calculate hours ahead from now to the midpoint of the forecast period
@@ -358,6 +426,19 @@ class SchedulerEngine:
                     hours_ahead = (midpoint - now).total_seconds() / 3600.0
                     # Round to 1 decimal for cleaner labels
                     hours_label = f"{hours_ahead:.1f}h"
+                    
+                    # Set the forecast with the actual target timestamp
+                    target_timestamp = midpoint.timestamp()
+                    _FORECAST_COLLECTOR.set_forecast(
+                        self.namespace, 
+                        self.name, 
+                        policy, 
+                        hours_label, 
+                        point.forecast,
+                        target_timestamp
+                    )
+                    
+                    # Also keep the old metric for backward compatibility
                     self._metric_forecast.labels(self.namespace, self.name, policy, hours_label).set(point.forecast)
 
     def publish_manual_schedule(self, schedule: Dict[str, object]) -> None:

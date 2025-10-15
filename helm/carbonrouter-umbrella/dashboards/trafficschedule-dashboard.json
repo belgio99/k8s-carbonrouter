@@ -361,8 +361,8 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_forecast_intensity{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=~\"[0-9]+\\\\.[0-9]+h\"}",
-          "legendFormat": "{{horizon}} ahead",
+          "expr": "scheduler_forecast_intensity_timestamped{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=~\"[0-9]+\\\\.[0-9]+h\"}",
+          "legendFormat": "{{horizon}}",
           "range": true,
           "refId": "A"
         }
@@ -500,7 +500,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_forecast_intensity{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=~\"[0-9]+\\\\.[0-9]+h\"}",
+          "expr": "scheduler_forecast_intensity_timestamped{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=~\"[0-9]+\\\\.[0-9]+h\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
