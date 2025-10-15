@@ -106,7 +106,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max by (flavour) (schedule_flavour_weight{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max by (flavour) (schedule_flavour_weight{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "legendFormat": "{{flavour}}%",
           "range": true,
           "refId": "A"
