@@ -235,11 +235,6 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Weight          int     `json:"weight"`
 			CarbonIntensity float64 `json:"carbonIntensity"`
 		} `json:"strategies"`
-		FlavourRules []struct {
-			FlavourName string `json:"flavourName"`
-			Precision   int    `json:"precision"`
-			Weight      int    `json:"weight"`
-		} `json:"flavourRules"`
 		Policy struct {
 			Name string `json:"name"`
 		} `json:"policy"`
@@ -297,25 +292,12 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			Weight:    strategy.Weight,
 		})
 	}
-	for _, rule := range remote.FlavourRules {
-		status.FlavourRules = append(status.FlavourRules, schedulingv1alpha1.FlavourRule{
-			FlavourName: rule.FlavourName,
-			Precision:   rule.Precision,
-			Weight:      rule.Weight,
-		})
-	}
 	if t, err := time.Parse(time.RFC3339, remote.ValidUntilISO); err == nil {
 		status.ValidUntil = metav1.NewTime(t)
 	}
 
 	sort.Slice(status.Strategies, func(i, j int) bool {
 		return status.Strategies[i].Precision < status.Strategies[j].Precision
-	})
-	sort.Slice(status.FlavourRules, func(i, j int) bool {
-		if status.FlavourRules[i].Precision == status.FlavourRules[j].Precision {
-			return status.FlavourRules[i].FlavourName < status.FlavourRules[j].FlavourName
-		}
-		return status.FlavourRules[i].Precision < status.FlavourRules[j].Precision
 	})
 
 	// 4) Overwrite old status with the new one

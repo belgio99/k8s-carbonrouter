@@ -382,8 +382,7 @@ class ScheduleDecision:
     
     Attributes:
         flavour_weights: Traffic weights by strategy (0-100, sum to 100)
-        flavour_rules: Routing rules for each strategy
-        strategies: Metadata for each precision strategy
+        strategies: Metadata for each precision strategy (includes precision, weight, name, etc.)
         valid_until: Schedule expiration timestamp
         credits: Quality credit ledger state
         policy_name: Name of policy that generated this schedule
@@ -393,7 +392,6 @@ class ScheduleDecision:
     """
 
     flavour_weights: Dict[str, int]
-    flavour_rules: List[Dict[str, object]]
     strategies: List[Dict[str, object]]
     valid_until: datetime
     credits: Dict[str, float]
@@ -412,7 +410,6 @@ class ScheduleDecision:
 
         return {
             "flavourWeights": self.flavour_weights,
-            "flavourRules": self.flavour_rules,
             "strategies": self.strategies,
             "validUntil": self.valid_until.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "credits": self.credits,
@@ -485,18 +482,10 @@ class ScheduleDecision:
         if "allowance" in policy_result.diagnostics.fields:
             credit_stats["allowance"] = policy_result.diagnostics.fields["allowance"]
 
-        flavour_rules: List[Dict[str, object]] = []
         strategies_meta: List[Dict[str, object]] = []
         for strategy in strategies:
             weight = scaled.get(strategy.name, 0)
             precision_pct = int(round(strategy.precision * 100))
-            flavour_rules.append(
-                {
-                    "flavourName": strategy.name,
-                    "precision": precision_pct,
-                    "weight": weight,
-                }
-            )
             strategies_meta.append(
                 {
                     "name": strategy.name,
@@ -509,7 +498,6 @@ class ScheduleDecision:
 
         return cls(
             flavour_weights=scaled,
-            flavour_rules=flavour_rules,
             strategies=strategies_meta,
             valid_until=valid_until,
             credits=credit_stats,

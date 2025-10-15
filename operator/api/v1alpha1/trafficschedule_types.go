@@ -97,19 +97,10 @@ type StrategyDecision struct {
 	Weight int `json:"weight"`
 }
 
-// FlavourRule describes routing weights for router consumers.
-type FlavourRule struct {
-	FlavourName string `json:"flavourName"`
-	Precision   int    `json:"precision"`
-	Weight      int    `json:"weight"`
-}
-
 // TrafficScheduleStatus defines the observed state of TrafficSchedule.
 type TrafficScheduleStatus struct {
 	// Strategies contains the routing weights for each known precision level.
 	Strategies []StrategyDecision `json:"strategies"`
-	// FlavourRules provides backward-compatible data for router components.
-	FlavourRules []FlavourRule `json:"flavourRules,omitempty"`
 	// ActivePolicy indicates the policy currently selected by the decision engine.
 	ActivePolicy string `json:"activePolicy"`
 	// ValidUntil specifies when the schedule should be refreshed.

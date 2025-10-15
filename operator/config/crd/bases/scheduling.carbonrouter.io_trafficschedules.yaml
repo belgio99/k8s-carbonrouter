@@ -309,24 +309,6 @@ spec:
                 description: EffectiveReplicaCeilings exposes throttled replica limits
                   keyed by component name.
                 type: object
-              flavourRules:
-                description: FlavourRules provides backward-compatible data for router
-                  components.
-                items:
-                  description: FlavourRule describes routing weights for router consumers.
-                  properties:
-                    flavourName:
-                      type: string
-                    precision:
-                      type: integer
-                    weight:
-                      type: integer
-                  required:
-                  - flavourName
-                  - precision
-                  - weight
-                  type: object
-                type: array
               forecastSchedule:
                 description: ForecastSchedule summarises the upcoming half-hour slots
                   as reported by the provider.
