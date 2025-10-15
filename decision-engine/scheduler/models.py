@@ -2,7 +2,7 @@
 Data Models for Carbon-Aware Scheduler
 
 This module defines the core data structures used throughout the scheduler:
-- StrategyProfile: Precision/quality variants (e.g., low, medium, high power)
+- FlavourProfile: Precision/quality variants (e.g., low, medium, high power)
 - ForecastPoint/Snapshot: Carbon intensity and demand forecasts
 - SchedulerConfig: Runtime configuration parameters
 - ScheduleDecision: Final traffic distribution schedule
@@ -67,10 +67,6 @@ class FlavourProfile:
             Error ratio (0.0 = perfect, 1.0 = worst)
         """
         return max(0.0, 1.0 - self.precision)
-
-
-# Backward compatibility alias
-StrategyProfile = FlavourProfile
 
 
 @dataclass
