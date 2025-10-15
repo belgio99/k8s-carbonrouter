@@ -180,7 +180,7 @@ class SchedulerEngine:
             namespace: Kubernetes namespace of TrafficSchedule
             name: Name of TrafficSchedule resource
             component_bounds: Min/max replica constraints per component
-            strategies: Precision strategies to use (defaults if None)
+            flavours: Precision flavours to use (defaults if None)
         """
         self.namespace = namespace
         self.name = name

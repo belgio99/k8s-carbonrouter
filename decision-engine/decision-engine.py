@@ -184,7 +184,7 @@ def _parse_flavours(data: Any) -> List[FlavourProfile]:
             )
         )
 
-    return strategies
+    return flavours
 
 
 def _as_int(value: Any) -> Optional[int]:
@@ -226,7 +226,7 @@ def _build_engine(
         name: Name of the TrafficSchedule resource
         config_overrides: Optional configuration parameter overrides
         component_bounds: Optional min/max replica constraints
-        strategies: Optional list of precision flavours to use
+        flavours: Optional list of precision flavours to use
         
     Returns:
         Configured SchedulerEngine instance
