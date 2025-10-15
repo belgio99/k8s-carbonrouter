@@ -85,9 +85,9 @@ def _partition_payload(
     # Parse precision flavours if provided
     flavours: Optional[List[FlavourProfile]] = None
     if "flavours" in payload:
-        strategies = _parse_flavours(payload.get("flavours"))
+        flavours = _parse_flavours(payload.get("flavours"))
 
-    return config_overrides, component_bounds, strategies
+    return config_overrides, component_bounds, flavours
 
 
 def _normalise_component_bounds(data: Any) -> Dict[str, Dict[str, int]]:
@@ -276,9 +276,9 @@ class SchedulerSession:
         self._stop_event = threading.Event()     # Signals shutdown
         
         # Parse initial configuration
-        config_overrides, component_bounds, strategies = _partition_payload(payload)
+        config_overrides, component_bounds, flavours = _partition_payload(payload)
         self._flavours: Optional[List[FlavourProfile]] = (
-            list(flavours) if strategies is not None else None
+            list(flavours) if flavours is not None else None
         )
         
         # Create scheduler engine
@@ -317,12 +317,12 @@ class SchedulerSession:
             payload: Configuration payload with overrides
         """
         LOGGER.info("Applying overrides for %s/%s: %s", self.namespace, self.name, payload)
-        config_overrides, component_bounds, strategies = _partition_payload(payload)
+        config_overrides, component_bounds, flavours = _partition_payload(payload)
         
         # Use new strategies if provided, otherwise keep existing ones
         next_flavours: Optional[List[FlavourProfile]]
-        if strategies is not None:
-            next_strategies = list(flavours)
+        if flavours is not None:
+            next_flavours = list(flavours)
         else:
             next_strategies = self._flavours
 
