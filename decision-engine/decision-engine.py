@@ -324,7 +324,7 @@ class SchedulerSession:
         if flavours is not None:
             next_flavours = list(flavours)
         else:
-            next_strategies = self._flavours
+            next_flavours = self._flavours
 
         # Rebuild engine with new configuration
         engine = _build_engine(
@@ -340,7 +340,7 @@ class SchedulerSession:
             self._engine = engine
             self._config_overrides = dict(config_overrides)
             self._component_bounds = component_bounds
-            self._flavours = next_strategies
+            self._flavours = next_flavours
             self._manual_schedule = None  # Clear manual override
             self._manual_expiry = 0.0
             self._schedule = None         # Invalidate current schedule
