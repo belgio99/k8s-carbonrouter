@@ -207,7 +207,7 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ensureBufferServiceDeployment(ctx, &svc, "router", tsSpec.Router.Resources, tsSpec.Router.Debug); err != nil {
+	if err := r.ensureBufferServiceDeployment(ctx, &svc, "router", tsSpec.Router.Resources, tsSpec.Router.Debug, ts.Namespace); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -215,7 +215,7 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ensureBufferServiceDeployment(ctx, &svc, "consumer", tsSpec.Consumer.Resources, tsSpec.Consumer.Debug); err != nil {
+	if err := r.ensureBufferServiceDeployment(ctx, &svc, "consumer", tsSpec.Consumer.Resources, tsSpec.Consumer.Debug, ts.Namespace); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -586,7 +586,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceService(ctx context.Context
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Context, svc *corev1.Service, component string, resources corev1.ResourceRequirements, debug bool) error {
+func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Context, svc *corev1.Service, component string, resources corev1.ResourceRequirements, debug bool, tsNamespace string) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	depName := fmt.Sprintf("buffer-service-%s-%s", component, svc.Name)
 	saName := fmt.Sprintf("%s-trafficschedule-viewer", svc.Name)
@@ -628,7 +628,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 		{Name: "TARGET_SVC_NAME", Value: svc.Name},
 		{Name: "TARGET_SVC_NAMESPACE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}},
 		{Name: "TS_NAME", Value: "traffic-schedule"},
-		{Name: "TS_NAMESPACE", Value: "default"},
+		{Name: "TS_NAMESPACE", Value: tsNamespace},
 		{Name: "DEBUG", Value: fmt.Sprintf("%t", debug)},
 		{Name: "PYTHONUNBUFFERED", Value: "1"},
 	}
