@@ -131,7 +131,7 @@ Additional metadata lives under `credits` and `policy` to avoid breaking existin
 | `scheduler_processing_throttle` | `namespace`, `schedule`, `policy` | Downstream autoscaling throttle factor. |
 | `scheduler_effective_replica_ceiling` | `namespace`, `schedule`, `component` | Throttled replica ceilings per component (`min`/`max` aware). |
 | `scheduler_policy_choice_total` | `namespace`, `schedule`, `policy`, `strategy` | Counter incremented for each routing decision. |
-| `scheduler_forecast_intensity` | `namespace`, `schedule`, `policy`, `horizon` | Carbon intensity forecasts in gCO₂/kWh. |
+| `scheduler_forecast_intensity` | `namespace`, `schedule`, `policy`, `horizon` | Carbon intensity forecasts in gCO₂/kWh. The `horizon` label can be `"now"` (current period), `"next"` (next period), or `"X.Xh"` (hours ahead, e.g., `"2.5h"`, `"12.0h"`) for extended forecasts up to 48 hours ahead. |
 
 These complement existing weight gauges.
 

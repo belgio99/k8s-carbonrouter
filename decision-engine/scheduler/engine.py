@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from prometheus_client import Counter, Gauge
@@ -342,10 +342,23 @@ class SchedulerEngine:
         for strategy, weight in policy_result.weights.items():
             self._metric_policy_choice.labels(self.namespace, self.name, policy, strategy).inc(weight)
 
+        # Export current and next forecasts with legacy labels
         if forecast.intensity_now is not None:
             self._metric_forecast.labels(self.namespace, self.name, policy, "now").set(forecast.intensity_now)
         if forecast.intensity_next is not None:
             self._metric_forecast.labels(self.namespace, self.name, policy, "next").set(forecast.intensity_next)
+        
+        # Export extended forecast schedule with hours_ahead labels
+        if forecast.schedule:
+            now = datetime.now(timezone.utc)
+            for point in forecast.schedule:
+                if point.forecast is not None:
+                    # Calculate hours ahead from now to the midpoint of the forecast period
+                    midpoint = point.start + (point.end - point.start) / 2
+                    hours_ahead = (midpoint - now).total_seconds() / 3600.0
+                    # Round to 1 decimal for cleaner labels
+                    hours_label = f"{hours_ahead:.1f}h"
+                    self._metric_forecast.labels(self.namespace, self.name, policy, hours_label).set(point.forecast)
 
     def publish_manual_schedule(self, schedule: Dict[str, object]) -> None:
         """Expose metrics for a manually provided schedule payload."""

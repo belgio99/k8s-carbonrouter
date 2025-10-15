@@ -25,6 +25,13 @@ The dashboard includes the following panels:
 * **Description**: Forecasted carbon intensity for the next slot
 * **Metric**: `scheduler_forecast_intensity{horizon="next"}`
 
+### 4. Carbon Intensity Forecast (48h)
+
+* **Type**: Time Series
+* **Description**: Extended carbon intensity forecast up to 48 hours ahead
+* **Metric**: `scheduler_forecast_intensity{horizon=~"[0-9]+\\.[0-9]+h"}`
+* **Note**: Shows all forecasted values with `horizon` labels like "0.5h", "1.0h", "2.5h", etc.
+
 ### 4. Credit Ledger (Balance & Velocity)
 
 * **Type**: Time Series
