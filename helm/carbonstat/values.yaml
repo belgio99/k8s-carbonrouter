@@ -125,7 +125,10 @@ affinity: {}
 instances:
   - name: high-power
     flavour: "high"
+    precision: 100
   - name: mid-power
     flavour: "mid"
+    precision: 50
   - name: low-power
     flavour: "low"
+    precision: 30
