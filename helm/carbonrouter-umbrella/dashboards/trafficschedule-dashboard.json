@@ -180,7 +180,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=\"now\"})",
+          "expr": "max(scheduler_forecast_intensity{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=\"now\"})",
           "legendFormat": "Now",
           "range": true,
           "refId": "A"
@@ -254,7 +254,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=\"next\"})",
+          "expr": "max(scheduler_forecast_intensity{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=\"next\"})",
           "legendFormat": "Next",
           "range": true,
           "refId": "A"
@@ -361,7 +361,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "scheduler_forecast_intensity{namespace=\"$namespace\", schedule=\"$schedule\", horizon=~\"[0-9]+\\\\.[0-9]+h\"}",
+          "expr": "scheduler_forecast_intensity{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\", horizon=~\"[0-9]+\\\\.[0-9]+h\"}",
           "legendFormat": "{{horizon}} ahead",
           "range": true,
           "refId": "A"
@@ -430,7 +430,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "max by (policy) (scheduler_credit_balance{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max by (policy) (scheduler_credit_balance{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -552,7 +552,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(scheduler_credit_balance{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max(scheduler_credit_balance{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Balance",
           "range": true,
           "refId": "A"
@@ -563,7 +563,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(scheduler_credit_velocity{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max(scheduler_credit_velocity{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Velocity",
           "range": true,
           "refId": "B"
@@ -639,7 +639,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(scheduler_avg_precision{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max(scheduler_avg_precision{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Avg Precision",
           "range": true,
           "refId": "A"
@@ -715,7 +715,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(scheduler_processing_throttle{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max(scheduler_processing_throttle{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "legendFormat": "Throttle",
           "range": true,
           "refId": "A"
@@ -808,7 +808,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max by (component) (scheduler_effective_replica_ceiling{namespace=\"$namespace\", schedule=\"$schedule\"})",
+          "expr": "max by (component) (scheduler_effective_replica_ceiling{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"})",
           "legendFormat": "{{component}}",
           "range": true,
           "refId": "A"
@@ -900,7 +900,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (strategy) (rate(scheduler_policy_choice_total{namespace=\"$namespace\", schedule=\"$schedule\"}[5m]))",
+          "expr": "sum by (strategy) (rate(scheduler_policy_choice_total{namespace=\"$decision_engine_namespace\", schedule=\"$schedule\"}[5m]))",
           "legendFormat": "{{strategy}}",
           "range": true,
           "refId": "A"
@@ -992,7 +992,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (flavour) (rate(router_http_requests_total{namespace=\"$namespace\"}[5m]))",
+          "expr": "sum by (flavour) (rate(router_http_requests_total{namespace=\"$app_namespace\"}[5m]))",
           "legendFormat": "{{flavour}}",
           "range": true,
           "refId": "A"
@@ -1084,7 +1084,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (flavour) (rate(consumer_messages_total{namespace=\"$namespace\"}[5m]))",
+          "expr": "sum by (flavour) (rate(consumer_messages_total{namespace=\"$app_namespace\"}[5m]))",
           "legendFormat": "{{flavour}}",
           "range": true,
           "refId": "A"
@@ -1177,7 +1177,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (label_carbonstat_precision) (kube_deployment_status_replicas{namespace=\"$namespace\", label_carbonstat_precision!=\"\"})",
+          "expr": "sum by (label_carbonstat_precision) (kube_deployment_status_replicas{namespace=\"$app_namespace\", label_carbonstat_precision!=\"\"})",
           "legendFormat": "{{label_carbonstat_precision}}%",
           "range": true,
           "refId": "A"
@@ -1269,7 +1269,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(router_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(router_request_duration_seconds_bucket{namespace=\"$app_namespace\"}[5m])))",
           "legendFormat": "p50",
           "range": true,
           "refId": "A"
@@ -1280,7 +1280,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(router_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(router_request_duration_seconds_bucket{namespace=\"$app_namespace\"}[5m])))",
           "legendFormat": "p95",
           "range": true,
           "refId": "B"
@@ -1291,7 +1291,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(router_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(router_request_duration_seconds_bucket{namespace=\"$app_namespace\"}[5m])))",
           "legendFormat": "p99",
           "range": true,
           "refId": "C"
