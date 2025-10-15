@@ -2,10 +2,10 @@
 Scheduler Engine - Core Scheduling Orchestration
 
 The SchedulerEngine is the main orchestrator that:
-1. Manages precision strategies (low/medium/high power variants)
+1. Manages precision flavours (low/medium/high power variants)
 2. Maintains quality credit ledger
 3. Fetches carbon intensity forecasts
-4. Evaluates scheduling policies to compute traffic distributions
+4. Evaluates scheduling policies/strategies to compute traffic distributions
 5. Exports Prometheus metrics for monitoring
 
 Each TrafficSchedule gets its own SchedulerEngine instance with
@@ -25,12 +25,12 @@ from prometheus_client import Counter, Gauge
 
 from .ledger import CreditLedger
 from .models import (
+    FlavourProfile,
     ForecastSnapshot,
     PolicyResult,
     ScheduleDecision,
     SchedulerConfig,
     ScalingDirective,
-    StrategyProfile,
     precision_key,
 )
 from .policies import CreditGreedyPolicy, ForecastAwarePolicy, PrecisionTierPolicy, SchedulerPolicy
@@ -39,36 +39,36 @@ from .providers import CarbonForecastProvider, DemandEstimator, ForecastManager
 _LOGGER = logging.getLogger("scheduler")
 
 
-class StrategyRegistry:
+class FlavourRegistry:
     """
-    Thread-safe in-memory registry of precision strategies.
+    Thread-safe in-memory registry of precision flavours.
     
-    Stores available StrategyProfile instances (e.g., precision-30, precision-50,
+    Stores available FlavourProfile instances (e.g., precision-30, precision-50,
     precision-100) and provides synchronized access for policy evaluation.
     """
 
-    def __init__(self, strategies: Optional[Iterable[StrategyProfile]] = None) -> None:
-        """Initialize registry with optional initial strategies."""
+    def __init__(self, flavours: Optional[Iterable[FlavourProfile]] = None) -> None:
+        """Initialize registry with optional initial flavours."""
         self._lock = threading.Lock()
-        self._strategies: Dict[str, StrategyProfile] = {}
-        if strategies:
-            for strategy in strategies:
-                self._strategies[strategy.name] = strategy
+        self._flavours: Dict[str, FlavourProfile] = {}
+        if flavours:
+            for flavour in flavours:
+                self._flavours[flavour.name] = flavour
 
-    def list(self) -> List[StrategyProfile]:
-        """Get list of all registered strategies."""
+    def list(self) -> List[FlavourProfile]:
+        """Get list of all registered flavours."""
         with self._lock:
-            return list(self._strategies.values())
+            return list(self._flavours.values())
 
-    def replace(self, strategies: Iterable[StrategyProfile]) -> None:
-        """Replace all strategies with new set."""
+    def replace(self, flavours: Iterable[FlavourProfile]) -> None:
+        """Replace all flavours with new set."""
         with self._lock:
-            self._strategies = {s.name: s for s in strategies}
+            self._flavours = {f.name: f for f in flavours}
 
-    def upsert(self, strategy: StrategyProfile) -> None:
-        """Add or update a single strategy."""
+    def upsert(self, flavour: FlavourProfile) -> None:
+        """Add or update a single flavour."""
         with self._lock:
-            self._strategies[strategy.name] = strategy
+            self._flavours[flavour.name] = flavour
 
 
 # Mapping of policy names to implementation classes
@@ -131,9 +131,9 @@ _METRIC_FORECAST = Gauge(
 
 
 def _merge_with_fallback(
-    primary: Iterable[StrategyProfile],
-    fallback: Iterable[StrategyProfile],
-) -> List[StrategyProfile]:
+    primary: Iterable[FlavourProfile],
+    fallback: Iterable[FlavourProfile],
+) -> List[FlavourProfile]:
     """
     Merge two strategy lists, with primary overriding fallback.
     
@@ -144,7 +144,7 @@ def _merge_with_fallback(
     Returns:
         Merged list sorted by precision (descending)
     """
-    merged: Dict[str, StrategyProfile] = {strategy.name: strategy for strategy in fallback}
+    merged: Dict[str, FlavourProfile] = {strategy.name: strategy for strategy in fallback}
     for strategy in primary:
         merged[strategy.name] = strategy
     return sorted(merged.values(), key=lambda item: item.precision, reverse=True)
@@ -170,7 +170,7 @@ class SchedulerEngine:
         namespace: str = "default",
         name: str = "default",
         component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
-        strategies: Optional[Iterable[StrategyProfile]] = None,
+        flavours: Optional[Iterable[FlavourProfile]] = None,
     ) -> None:
         """
         Initialize scheduler engine.
@@ -206,12 +206,12 @@ class SchedulerEngine:
             credit_max=self.config.credit_max,
             window_size=self.config.smoothing_window,
         )
-        default_strategies = self._load_default_strategies()
-        provided_strategies = list(strategies) if strategies else []
-        # Use only provided strategies if available, otherwise use defaults
-        initial_strategies = provided_strategies if provided_strategies else default_strategies
-        self._fallback_strategies = list(default_strategies)
-        self.registry = StrategyRegistry(initial_strategies)
+        default_flavours = self._load_default_flavours()
+        provided_flavours = list(flavours) if flavours else []
+        # Use only provided flavours if available, otherwise use defaults
+        initial_flavours = provided_flavours if provided_flavours else default_flavours
+        self._fallback_flavours = list(default_flavours)
+        self.registry = FlavourRegistry(initial_flavours)
         self.forecast_manager = ForecastManager(CarbonForecastProvider(), DemandEstimator())
         self.policy = self._build_policy(self.config.policy_name)
         self._lock = threading.Lock()
@@ -237,7 +237,7 @@ class SchedulerEngine:
             discovery_interval=int(os.getenv("STRATEGY_DISCOVERY_INTERVAL", "60")),
         )
 
-    def _load_default_strategies(self) -> List[StrategyProfile]:
+    def _load_default_flavours(self) -> List[FlavourProfile]:
         raw = os.getenv("SCHEDULER_STRATEGIES")
         if raw:
             try:
@@ -252,7 +252,7 @@ class SchedulerEngine:
                     precision = max(0.0, min(precision, 1.0))
                     strategy_name = str(name) if isinstance(name, str) and name else precision_key(precision)
                     strategies.append(
-                        StrategyProfile(
+                        FlavourProfile(
                             name=strategy_name,
                             precision=precision,
                             carbon_intensity=carbon_intensity,
@@ -263,9 +263,9 @@ class SchedulerEngine:
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                 _LOGGER.warning("Invalid SCHEDULER_STRATEGIES env var: %s", exc)
         return [
-            StrategyProfile(precision_key(1.0), precision=1.0, carbon_intensity=1.0),
-            StrategyProfile(precision_key(0.85), precision=0.85, carbon_intensity=0.7),
-            StrategyProfile(precision_key(0.7), precision=0.7, carbon_intensity=0.4),
+            FlavourProfile(precision_key(1.0), precision=1.0, carbon_intensity=1.0),
+            FlavourProfile(precision_key(0.85), precision=0.85, carbon_intensity=0.7),
+            FlavourProfile(precision_key(0.7), precision=0.7, carbon_intensity=0.4),
         ]
 
     def _build_policy(self, name: str) -> SchedulerPolicy:
@@ -279,24 +279,24 @@ class SchedulerEngine:
             self.policy = self._build_policy(name)
             self.config.policy_name = name
 
-    def refresh_strategies(self, strategies: Iterable[StrategyProfile]) -> None:
-        candidate_strategies = list(strategies)
-        if candidate_strategies:
-            merged = _merge_with_fallback(candidate_strategies, self._fallback_strategies)
+    def refresh_flavours(self, flavours: Iterable[FlavourProfile]) -> None:
+        candidate_flavours = list(flavours)
+        if candidate_flavours:
+            merged = _merge_with_fallback(candidate_flavours, self._fallback_flavours)
         else:
-            merged = list(self._fallback_strategies)
+            merged = list(self._fallback_flavours)
         self.registry.replace(merged)
 
     def evaluate(self) -> ScheduleDecision:
         """Run the scheduler once and produce the next decision."""
 
         with self._lock:
-            strategies = self.registry.list()
-            if not strategies:
-                raise RuntimeError("No strategies available for scheduling")
+            flavours = self.registry.list()
+            if not flavours:
+                raise RuntimeError("No flavours available for scheduling")
 
             forecast = self.forecast_manager.snapshot()
-            result = self.policy.evaluate(strategies, forecast)
+            result = self.policy.evaluate(flavours, forecast)
             credit_balance = self.ledger.update(result.avg_precision)
             credit_velocity = self.ledger.velocity()
             scaling = ScalingDirective.from_state(
@@ -307,7 +307,7 @@ class SchedulerEngine:
             )
             decision = ScheduleDecision.from_policy(
                 result,
-                strategies,
+                flavours,
                 self.config,
                 credit_balance,
                 credit_velocity,

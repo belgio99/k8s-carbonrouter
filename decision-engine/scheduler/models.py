@@ -38,18 +38,18 @@ def precision_key(precision: float) -> str:
 
 
 @dataclass
-class StrategyProfile:
+class FlavourProfile:
     """
-    Represents a precision/quality variant for the target service.
+    Represents a precision/quality variant (flavour) for the target service.
     
-    Each strategy corresponds to a deployment with a specific precision level
+    Each flavour corresponds to a deployment with a specific precision level
     (e.g., low-power model at 30% precision, high-power at 100% precision).
     
     Attributes:
-        name: Strategy identifier (e.g., "precision-30")
+        name: Flavour identifier (e.g., "precision-30")
         precision: Quality level relative to baseline (0.0-1.0)
         carbon_intensity: Estimated carbon cost per request (gCO2eq)
-        enabled: Whether this strategy is currently available
+        enabled: Whether this flavour is currently available
         annotations: Metadata from Kubernetes deployment labels
     """
 
@@ -61,12 +61,16 @@ class StrategyProfile:
 
     def expected_error(self) -> float:
         """
-        Calculate the expected quality error for this strategy.
+        Calculate the expected quality error for this flavour.
         
         Returns:
             Error ratio (0.0 = perfect, 1.0 = worst)
         """
         return max(0.0, 1.0 - self.precision)
+
+
+# Backward compatibility alias
+StrategyProfile = FlavourProfile
 
 
 @dataclass
@@ -381,18 +385,18 @@ class ScheduleDecision:
     of the scheduler consumed by the router and Kubernetes operator.
     
     Attributes:
-        flavour_weights: Traffic weights by strategy (0-100, sum to 100)
-        strategies: Metadata for each precision strategy (includes precision, weight, name, etc.)
+        flavour_weights: Traffic weights by flavour (0-100, sum to 100)
+        flavours: Metadata for each precision flavour (includes precision, weight, name, etc.)
         valid_until: Schedule expiration timestamp
         credits: Quality credit ledger state
-        policy_name: Name of policy that generated this schedule
+        policy_name: Name of scheduling policy/strategy (e.g., "forecast-aware", "credit-greedy")
         diagnostics: Policy-specific diagnostic values
         avg_precision: Weighted average precision of the schedule
         scaling: Autoscaling recommendations
     """
 
     flavour_weights: Dict[str, int]
-    strategies: List[Dict[str, object]]
+    flavours: List[Dict[str, object]]
     valid_until: datetime
     credits: Dict[str, float]
     policy_name: str
@@ -410,7 +414,7 @@ class ScheduleDecision:
 
         return {
             "flavourWeights": self.flavour_weights,
-            "strategies": self.strategies,
+            "flavours": self.flavours,
             "validUntil": self.valid_until.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "credits": self.credits,
             "policy": {"name": self.policy_name},
@@ -423,7 +427,7 @@ class ScheduleDecision:
     def from_policy(
         cls,
         policy_result: PolicyResult,
-        strategies: List[StrategyProfile],
+        flavours: List[FlavourProfile],
         config: SchedulerConfig,
         credit_balance: float,
         credit_velocity: float,
@@ -438,7 +442,7 @@ class ScheduleDecision:
         
         Args:
             policy_result: Raw output from scheduling policy
-            strategies: Available precision strategies
+            flavours: Available precision flavours
             config: Scheduler configuration
             credit_balance: Current quality credit balance
             credit_velocity: Rate of credit change
@@ -482,23 +486,23 @@ class ScheduleDecision:
         if "allowance" in policy_result.diagnostics.fields:
             credit_stats["allowance"] = policy_result.diagnostics.fields["allowance"]
 
-        strategies_meta: List[Dict[str, object]] = []
-        for strategy in strategies:
-            weight = scaled.get(strategy.name, 0)
-            precision_pct = int(round(strategy.precision * 100))
-            strategies_meta.append(
+        flavours_meta: List[Dict[str, object]] = []
+        for flavour in flavours:
+            weight = scaled.get(flavour.name, 0)
+            precision_pct = int(round(flavour.precision * 100))
+            flavours_meta.append(
                 {
-                    "name": strategy.name,
+                    "name": flavour.name,
                     "precision": precision_pct,
                     "weight": weight,
-                    "carbonIntensity": strategy.carbon_intensity,
-                    "enabled": strategy.enabled,
+                    "carbonIntensity": flavour.carbon_intensity,
+                    "enabled": flavour.enabled,
                 }
             )
 
         return cls(
             flavour_weights=scaled,
-            strategies=strategies_meta,
+            flavours=flavours_meta,
             valid_until=valid_until,
             credits=credit_stats,
             policy_name=config.policy_name,

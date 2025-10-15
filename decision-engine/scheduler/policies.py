@@ -1,4 +1,9 @@
-"""Scheduling heuristics for the carbon-aware scheduler."""
+"""Scheduling heuristics (strategies/policies) for the carbon-aware scheduler.
+
+Note on terminology:
+- Policy/Strategy (in this file): Scheduling algorithms like credit-greedy, forecast-aware
+- Flavour: Precision variants like precision-30, precision-50, precision-100
+"""
 
 from __future__ import annotations
 
@@ -6,11 +11,11 @@ from abc import ABC, abstractmethod
 from typing import Dict, Iterable, List, Optional
 
 from .ledger import CreditLedger
-from .models import ForecastSnapshot, PolicyDiagnostics, PolicyResult, StrategyProfile
+from .models import FlavourProfile, ForecastSnapshot, PolicyDiagnostics, PolicyResult
 
 
 class SchedulerPolicy(ABC):
-    """Abstract policy interface."""
+    """Abstract scheduling policy interface."""
 
     name: str
 
@@ -20,47 +25,47 @@ class SchedulerPolicy(ABC):
     @abstractmethod
     def evaluate(
         self,
-        strategies: Iterable[StrategyProfile],
+        flavours: Iterable[FlavourProfile],
     forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
-        """Return a distribution for the next scheduling window."""
+        """Return a flavour distribution for the next scheduling window."""
 
 
 class CreditGreedyPolicy(SchedulerPolicy):
-    """Spend credit on greener strategies while keeping error in check."""
+    """Spend credit on greener flavours while keeping error in check."""
 
     name = "credit-greedy"
 
     def evaluate(
         self,
-        strategies: Iterable[StrategyProfile],
+        flavours: Iterable[FlavourProfile],
     forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
-        strategies = [s for s in strategies if s.enabled]
-        if not strategies:
-            raise ValueError("no strategies enabled")
+        flavours_list = [f for f in flavours if f.enabled]
+        if not flavours_list:
+            raise ValueError("no flavours enabled")
 
-        strategies.sort(key=lambda s: s.precision, reverse=True)
-        baseline = strategies[0]
+        flavours_list.sort(key=lambda f: f.precision, reverse=True)
+        baseline = flavours_list[0]
 
-        # Portion of traffic we can spend on non-baseline strategies
+        # Portion of traffic we can spend on non-baseline flavours
         allowance = 0.0
         if self.ledger.credit_max > 0:
             allowance = max(0.0, min(1.0, self.ledger.balance / self.ledger.credit_max))
 
         weights: Dict[str, float] = {baseline.name: max(0.0, 1.0 - allowance)}
-        greener = strategies[1:]
+        greener = flavours_list[1:]
         if greener:
-            scores = [self._carbon_score(baseline, s) for s in greener]
+            scores = [self._carbon_score(baseline, f) for f in greener]
             score_sum = sum(scores) or len(scores)
-            for s, score in zip(greener, scores):
-                weights[s.name] = allowance * (score / score_sum)
+            for f, score in zip(greener, scores):
+                weights[f.name] = allowance * (score / score_sum)
 
         total = sum(weights.values()) or 1.0
         weights = {k: v / total for k, v in weights.items()}
 
         avg_precision = sum(
-            w * self._precision_of_name(strategies, name) for name, w in weights.items()
+            w * self._precision_of_name(flavours_list, name) for name, w in weights.items()
         )
         diagnostics = PolicyDiagnostics(
             {
@@ -72,18 +77,18 @@ class CreditGreedyPolicy(SchedulerPolicy):
         return PolicyResult(weights, avg_precision, diagnostics)
 
     @staticmethod
-    def _carbon_score(baseline: StrategyProfile, strategy: StrategyProfile) -> float:
+    def _carbon_score(baseline: FlavourProfile, flavour: FlavourProfile) -> float:
         baseline_intensity = baseline.carbon_intensity or 0.0
-        intensity_gain = baseline_intensity - (strategy.carbon_intensity or 0.0)
-        error_penalty = max(1e-6, strategy.expected_error())
+        intensity_gain = baseline_intensity - (flavour.carbon_intensity or 0.0)
+        error_penalty = max(1e-6, flavour.expected_error())
         score = intensity_gain if intensity_gain > 0 else 0.5 * error_penalty
         return max(1e-6, score / error_penalty)
 
     @staticmethod
-    def _precision_of_name(strategies: List[StrategyProfile], name: str) -> float:
-        for s in strategies:
-            if s.name == name:
-                return s.precision
+    def _precision_of_name(flavours: List[FlavourProfile], name: str) -> float:
+        for f in flavours:
+            if f.name == name:
+                return f.precision
         return 1.0
 
 
@@ -94,11 +99,11 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
 
     def evaluate(
         self,
-        strategies: Iterable[StrategyProfile],
+        flavours: Iterable[FlavourProfile],
     forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
-        strategy_list = [s for s in strategies]
-        base = super().evaluate(strategy_list[:], forecast)
+        flavours_list = [f for f in flavours]
+        base = super().evaluate(flavours_list[:], forecast)
         if not forecast or forecast.intensity_now is None or forecast.intensity_next is None:
             return base
 
@@ -117,7 +122,7 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
         weights = {k: v / total for k, v in weights.items()}
 
         avg_precision = sum(
-            weights[name] * self._precision_of_name(strategy_list, name)
+            weights[name] * self._precision_of_name(flavours_list, name)
             for name in weights
         )
         diagnostics = PolicyDiagnostics(
@@ -131,23 +136,23 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
 
 
 class PrecisionTierPolicy(SchedulerPolicy):
-    """Maintain target average precision by tiering strategies."""
+    """Maintain target average precision by tiering flavours."""
 
     name = "precision-tier"
 
     def evaluate(
         self,
-        strategies: Iterable[StrategyProfile],
+        flavours: Iterable[FlavourProfile],
     forecast: Optional[ForecastSnapshot] = None,
     ) -> PolicyResult:
-        strategies = [s for s in strategies if s.enabled]
-        if not strategies:
-            raise ValueError("no strategies enabled")
+        flavours_list = [f for f in flavours if f.enabled]
+        if not flavours_list:
+            raise ValueError("no flavours enabled")
 
         tiers = {
-            "tier-1": [s for s in strategies if s.precision >= 0.95],
-            "tier-2": [s for s in strategies if 0.8 <= s.precision < 0.95],
-            "tier-3": [s for s in strategies if s.precision < 0.8],
+            "tier-1": [f for f in flavours_list if f.precision >= 0.95],
+            "tier-2": [f for f in flavours_list if 0.8 <= f.precision < 0.95],
+            "tier-3": [f for f in flavours_list if f.precision < 0.8],
         }
 
         # Base allocations respecting ledger balance
@@ -169,19 +174,19 @@ class PrecisionTierPolicy(SchedulerPolicy):
             ("tier-2", secondary_share, total_secondary),
             ("tier-3", tertiary_share, total_third),
         ):
-            for strategy in tiers[tier] or []:
-                weights[strategy.name] = share / total
+            for flavour in tiers[tier] or []:
+                weights[flavour.name] = share / total
 
         if not weights:
-            # fallback to single strategy
-            best = max(strategies, key=lambda s: s.precision)
+            # fallback to single flavour
+            best = max(flavours_list, key=lambda f: f.precision)
             weights[best.name] = 1.0
 
         total = sum(weights.values()) or 1.0
         weights = {k: v / total for k, v in weights.items()}
 
         avg_precision = sum(
-            weights[name] * self._precision_of_name(strategies, name) for name in weights
+            weights[name] * self._precision_of_name(flavours_list, name) for name in weights
         )
         diagnostics = PolicyDiagnostics(
             {
@@ -194,8 +199,8 @@ class PrecisionTierPolicy(SchedulerPolicy):
         return PolicyResult(weights, avg_precision, diagnostics)
 
     @staticmethod
-    def _precision_of_name(strategies: Iterable[StrategyProfile], name: str) -> float:
-        for s in strategies:
-            if s.name == name:
-                return s.precision
+    def _precision_of_name(flavours: Iterable[FlavourProfile], name: str) -> float:
+        for f in flavours:
+            if f.name == name:
+                return f.precision
         return 1.0

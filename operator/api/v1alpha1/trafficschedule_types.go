@@ -89,19 +89,22 @@ type TrafficScheduleSpec struct {
 	Scheduler SchedulerConfigSpec `json:"scheduler,omitempty"`
 }
 
-// StrategyDecision describes the scheduler outcome for a specific precision level.
-type StrategyDecision struct {
+// FlavourDecision describes the scheduler outcome for a specific precision flavour.
+type FlavourDecision struct {
 	// Precision is expressed as an integer percentage (e.g. 100, 85, 60).
 	Precision int `json:"precision"`
 	// Weight represents the share of traffic (percentage) assigned to this precision.
 	Weight int `json:"weight"`
 }
 
+// StrategyDecision is an alias for backward compatibility.
+type StrategyDecision = FlavourDecision
+
 // TrafficScheduleStatus defines the observed state of TrafficSchedule.
 type TrafficScheduleStatus struct {
-	// Strategies contains the routing weights for each known precision level.
-	Strategies []StrategyDecision `json:"strategies"`
-	// ActivePolicy indicates the policy currently selected by the decision engine.
+	// Flavours contains the routing weights for each known precision level.
+	Flavours []FlavourDecision `json:"flavours"`
+	// ActivePolicy indicates the scheduling strategy/policy currently selected by the decision engine.
 	ActivePolicy string `json:"activePolicy"`
 	// ValidUntil specifies when the schedule should be refreshed.
 	ValidUntil metav1.Time `json:"validUntil"`

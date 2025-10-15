@@ -21,7 +21,7 @@ from flask import Flask, jsonify, request
 from prometheus_client import start_http_server
 
 from scheduler import SchedulerEngine
-from scheduler.models import SchedulerConfig, StrategyProfile, precision_key
+from scheduler.models import SchedulerConfig, FlavourProfile, precision_key
 
 
 logging.basicConfig(level=os.getenv("LOGLEVEL", "INFO").upper())
@@ -48,7 +48,7 @@ SCHEDULER_CONFIG_KEYS = {
 
 def _partition_payload(
     payload: Optional[Mapping[str, Any]]
-) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]], Optional[List[StrategyProfile]]]:
+) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]], Optional[List[FlavourProfile]]]:
     """
     Parse incoming configuration payload into its constituent parts.
     
@@ -56,10 +56,10 @@ def _partition_payload(
         payload: Raw configuration data from API request
         
     Returns:
-        Tuple of (config_overrides, component_bounds, strategies):
+        Tuple of (config_overrides, component_bounds, flavours):
         - config_overrides: Scheduler configuration parameters
         - component_bounds: Min/max replica constraints per component
-        - strategies: List of precision strategies to use
+        - strategies: List of precision flavours to use
     """
     if not payload or not isinstance(payload, Mapping):
         return {}, {}, None
@@ -82,10 +82,10 @@ def _partition_payload(
     components_raw = payload.get("components")
     component_bounds = _normalise_component_bounds(components_raw)
 
-    # Parse precision strategies if provided
-    strategies: Optional[List[StrategyProfile]] = None
-    if "strategies" in payload:
-        strategies = _parse_strategies(payload.get("strategies"))
+    # Parse precision flavours if provided
+    flavours: Optional[List[FlavourProfile]] = None
+    if "flavours" in payload:
+        strategies = _parse_flavours(payload.get("flavours"))
 
     return config_overrides, component_bounds, strategies
 
@@ -127,7 +127,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _parse_strategies(data: Any) -> List[StrategyProfile]:
+def _parse_flavours(data: Any) -> List[FlavourProfile]:
     """
     Parse strategy profiles from configuration payload.
     
@@ -138,12 +138,12 @@ def _parse_strategies(data: Any) -> List[StrategyProfile]:
         data: List of strategy dictionaries with precision, carbonIntensity, etc.
         
     Returns:
-        List of StrategyProfile objects with normalized precision values (0.0-1.0)
+        List of FlavourProfile objects with normalized precision values (0.0-1.0)
     """
     if not isinstance(data, list):
         return []
 
-    strategies: List[StrategyProfile] = []
+    flavours: List[FlavourProfile] = []
     for item in data:
         if not isinstance(item, Mapping):
             continue
@@ -174,8 +174,8 @@ def _parse_strategies(data: Any) -> List[StrategyProfile]:
                 if key is not None and value is not None
             }
 
-        strategies.append(
-            StrategyProfile(
+        flavours.append(
+            FlavourProfile(
                 name=str(strategy_name),
                 precision=precision,
                 carbon_intensity=carbon_intensity,
@@ -216,7 +216,7 @@ def _build_engine(
     name: str,
     config_overrides: Optional[Dict[str, Any]] = None,
     component_bounds: Optional[Dict[str, Dict[str, int]]] = None,
-    strategies: Optional[List[StrategyProfile]] = None,
+    flavours: Optional[List[FlavourProfile]] = None,
 ) -> SchedulerEngine:
     """
     Create a SchedulerEngine instance with given configuration.
@@ -226,7 +226,7 @@ def _build_engine(
         name: Name of the TrafficSchedule resource
         config_overrides: Optional configuration parameter overrides
         component_bounds: Optional min/max replica constraints
-        strategies: Optional list of precision strategies to use
+        strategies: Optional list of precision flavours to use
         
     Returns:
         Configured SchedulerEngine instance
@@ -239,7 +239,7 @@ def _build_engine(
         namespace=namespace,
         name=name,
         component_bounds=component_bounds,
-        strategies=strategies,
+        strategies=flavours,
     )
 
 
@@ -277,8 +277,8 @@ class SchedulerSession:
         
         # Parse initial configuration
         config_overrides, component_bounds, strategies = _partition_payload(payload)
-        self._strategies: Optional[List[StrategyProfile]] = (
-            list(strategies) if strategies is not None else None
+        self._flavours: Optional[List[FlavourProfile]] = (
+            list(flavours) if strategies is not None else None
         )
         
         # Create scheduler engine
@@ -287,7 +287,7 @@ class SchedulerSession:
             name,
             config_overrides,
             component_bounds,
-            strategies=self._strategies,
+            strategies=self._flavours,
         )
         self._config_overrides = dict(config_overrides)
         self._component_bounds = component_bounds
@@ -320,11 +320,11 @@ class SchedulerSession:
         config_overrides, component_bounds, strategies = _partition_payload(payload)
         
         # Use new strategies if provided, otherwise keep existing ones
-        next_strategies: Optional[List[StrategyProfile]]
+        next_flavours: Optional[List[FlavourProfile]]
         if strategies is not None:
-            next_strategies = list(strategies)
+            next_strategies = list(flavours)
         else:
-            next_strategies = self._strategies
+            next_strategies = self._flavours
 
         # Rebuild engine with new configuration
         engine = _build_engine(
@@ -332,7 +332,7 @@ class SchedulerSession:
             self.name,
             config_overrides,
             component_bounds,
-            strategies=next_strategies,
+            strategies=next_flavours,
         )
         
         # Update state atomically
@@ -340,7 +340,7 @@ class SchedulerSession:
             self._engine = engine
             self._config_overrides = dict(config_overrides)
             self._component_bounds = component_bounds
-            self._strategies = next_strategies
+            self._flavours = next_strategies
             self._manual_schedule = None  # Clear manual override
             self._manual_expiry = 0.0
             self._schedule = None         # Invalidate current schedule

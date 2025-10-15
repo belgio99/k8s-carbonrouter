@@ -264,8 +264,8 @@ spec:
             description: TrafficScheduleStatus defines the observed state of TrafficSchedule.
             properties:
               activePolicy:
-                description: ActivePolicy indicates the policy currently selected
-                  by the decision engine.
+                description: ActivePolicy indicates the scheduling strategy/policy
+                  currently selected by the decision engine.
                 type: string
               carbonForecastNext:
                 description: CarbonForecastNext is the next slot forecast in gCO2/kWh.
@@ -309,6 +309,26 @@ spec:
                 description: EffectiveReplicaCeilings exposes throttled replica limits
                   keyed by component name.
                 type: object
+              flavours:
+                description: Flavours contains the routing weights for each known
+                  precision level.
+                items:
+                  description: FlavourDecision describes the scheduler outcome for
+                    a specific precision flavour.
+                  properties:
+                    precision:
+                      description: Precision is expressed as an integer percentage
+                        (e.g. 100, 85, 60).
+                      type: integer
+                    weight:
+                      description: Weight represents the share of traffic (percentage)
+                        assigned to this precision.
+                      type: integer
+                  required:
+                  - precision
+                  - weight
+                  type: object
+                type: array
               forecastSchedule:
                 description: ForecastSchedule summarises the upcoming half-hour slots
                   as reported by the provider.
@@ -333,33 +353,13 @@ spec:
                 description: ProcessingThrottle exports the throttle factor applied
                   to downstream autoscaling.
                 type: string
-              strategies:
-                description: Strategies contains the routing weights for each known
-                  precision level.
-                items:
-                  description: StrategyDecision describes the scheduler outcome for
-                    a specific precision level.
-                  properties:
-                    precision:
-                      description: Precision is expressed as an integer percentage
-                        (e.g. 100, 85, 60).
-                      type: integer
-                    weight:
-                      description: Weight represents the share of traffic (percentage)
-                        assigned to this precision.
-                      type: integer
-                  required:
-                  - precision
-                  - weight
-                  type: object
-                type: array
               validUntil:
                 description: ValidUntil specifies when the schedule should be refreshed.
                 format: date-time
                 type: string
             required:
             - activePolicy
-            - strategies
+            - flavours
             - validUntil
             type: object
         type: object
