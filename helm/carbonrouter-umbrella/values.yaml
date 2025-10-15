@@ -50,6 +50,12 @@ carbonrouter-operator:
   podAnnotations:
     sidecar.istio.io/inject: "false"
 
+grafana:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+
 kube-prometheus-stack:
   kube-state-metrics:
     metricLabelsAllowlist:
@@ -60,3 +66,12 @@ kube-prometheus-stack:
   prometheus-node-exporter:
     hostRootFsMount:
       enabled: false
+  grafana:
+    enabled: true
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+        searchNamespace: ALL
+    adminPassword: admin
