@@ -32,6 +32,27 @@ Each strategy is implemented in a separate file for modularity and easy extensio
   - Allocates traffic proportionally across tiers
   - Respects credit balance constraints
 
+### 4. Forecast-Aware-Global (`forecast_aware_global.py`) ⭐ **ADVANCED**
+
+- **Name**: `forecast-aware-global`
+- **Description**: Most comprehensive strategy with global optimization using all available signals
+- **Key Features**:
+  - ✅ **Credit/Debt Tracking**: Uses credit ledger for quality-carbon balance
+  - ✅ **Current Greenness**: Considers current carbon intensity
+  - ✅ **Carbon Forecasts**: Short-term and extended look-ahead (up to 3 hours)
+  - ✅ **Demand Forecasts**: Anticipates load spikes and conserves credit accordingly
+  - ✅ **Cumulative Emissions**: Tracks total carbon emissions and adjusts to stay on budget
+  - ✅ **Multi-Factor Scoring**: Combines all signals with weighted adjustments:
+    - 35% weight on carbon intensity trend
+    - 25% weight on demand forecast
+    - 25% weight on emissions budget
+    - 15% weight on extended forecast look-ahead
+- **Use Cases**:
+  - Production environments with high carbon reduction targets
+  - Scenarios with variable workload patterns
+  - When comprehensive carbon+quality optimization is critical
+  - Research and comparison of different scheduling approaches
+
 ## Adding a New Strategy
 
 To add a custom scheduling strategy:

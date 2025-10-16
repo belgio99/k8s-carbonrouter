@@ -35,7 +35,7 @@ from .models import (
     ScalingDirective,
     precision_key,
 )
-from .strategies import CreditGreedyPolicy, ForecastAwarePolicy, PrecisionTierPolicy, SchedulerPolicy
+from .strategies import CreditGreedyPolicy, ForecastAwarePolicy, ForecastAwareGlobalPolicy, PrecisionTierPolicy, SchedulerPolicy
 from .providers import CarbonForecastProvider, DemandEstimator, ForecastManager
 
 _LOGGER = logging.getLogger("scheduler")
@@ -77,6 +77,7 @@ class FlavourRegistry:
 _POLICY_BUILDERS: Dict[str, type[SchedulerPolicy]] = {
     "credit-greedy": CreditGreedyPolicy,
     "forecast-aware": ForecastAwarePolicy,
+    "forecast-aware-global": ForecastAwareGlobalPolicy,
     "precision-tier": PrecisionTierPolicy,
 }
 
