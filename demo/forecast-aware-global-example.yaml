@@ -1,0 +1,145 @@
+apiVersion: carbonrouter.carbonshift.io/v1alpha1
+kind: TrafficSchedule
+metadata:
+  name: example-forecast-aware-global
+  namespace: default
+spec:
+  # Target service to schedule
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-ml-service
+  
+  # Scheduler configuration
+  config:
+    # Enable the advanced forecast-aware-global strategy
+    policy: "forecast-aware-global"
+    
+    # Quality constraints
+    targetError: 0.1        # 10% quality error tolerance
+    creditMax: 1.0          # Maximum credit balance (quality surplus)
+    creditMin: -1.0         # Minimum credit balance (quality debt)
+    creditWindow: 300       # 5-minute smoothing window (seconds)
+    
+    # Schedule refresh
+    validFor: 60            # Schedule validity period (seconds)
+    discoveryInterval: 60   # Strategy discovery interval (seconds)
+    
+    # Carbon API configuration
+    carbonTarget: "national"  # UK national grid forecast
+    carbonTimeout: 2.0        # API timeout (seconds)
+    carbonCacheTTL: 300.0     # Cache TTL (seconds)
+  
+  # Precision flavours (auto-discovered from deployments with carbonstat.precision label)
+  # These are managed by the operator based on deployment labels
+  
+  # Optional: Component-specific replica bounds
+  componentBounds:
+    router:
+      min: 2
+      max: 10
+    consumer:
+      min: 1
+      max: 8
+
+---
+# Example: High-precision deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-ml-service-high
+  namespace: default
+  labels:
+    app: my-ml-service
+    carbonstat.precision: "100"  # 100% precision (baseline)
+    carbonstat.carbon-intensity: "12.5"  # gCO2eq per request
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-ml-service
+      precision: high
+  template:
+    metadata:
+      labels:
+        app: my-ml-service
+        precision: high
+    spec:
+      containers:
+      - name: service
+        image: my-ml-service:v1.0.0
+        env:
+        - name: MODEL_SIZE
+          value: "large"
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+
+---
+# Example: Medium-precision deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-ml-service-medium
+  namespace: default
+  labels:
+    app: my-ml-service
+    carbonstat.precision: "85"  # 85% precision
+    carbonstat.carbon-intensity: "8.2"  # gCO2eq per request
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-ml-service
+      precision: medium
+  template:
+    metadata:
+      labels:
+        app: my-ml-service
+        precision: medium
+    spec:
+      containers:
+      - name: service
+        image: my-ml-service:v1.0.0
+        env:
+        - name: MODEL_SIZE
+          value: "medium"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+
+---
+# Example: Low-precision deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-ml-service-low
+  namespace: default
+  labels:
+    app: my-ml-service
+    carbonstat.precision: "70"  # 70% precision
+    carbonstat.carbon-intensity: "4.5"  # gCO2eq per request
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-ml-service
+      precision: low
+  template:
+    metadata:
+      labels:
+        app: my-ml-service
+        precision: low
+    spec:
+      containers:
+      - name: service
+        image: my-ml-service:v1.0.0
+        env:
+        - name: MODEL_SIZE
+          value: "small"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
