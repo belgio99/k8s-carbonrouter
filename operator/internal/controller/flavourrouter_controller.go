@@ -223,17 +223,26 @@ func (r *FlavourRouterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ensureRouterScaledObject(ctx, &svc, tsSpec.Router.Autoscaling); err != nil {
+	// Extract replica ceilings from TrafficSchedule status for carbon-aware autoscaling.
+	// The decision engine computes these ceilings based on carbon intensity and quality
+	// credits. They are applied to KEDA ScaledObjects to throttle autoscaling during
+	// high-carbon periods, trading latency for reduced energy consumption.
+	replicaCeilings := trafficschedule.EffectiveReplicaCeilings
+	if replicaCeilings == nil {
+		replicaCeilings = make(map[string]int32)
+	}
+
+	if err := r.ensureRouterScaledObject(ctx, &svc, tsSpec.Router.Autoscaling, replicaCeilings); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.ensureConsumerScaledObject(ctx, &svc, tsSpec.Consumer.Autoscaling, activePrecisions); err != nil {
+	if err := r.ensureConsumerScaledObject(ctx, &svc, tsSpec.Consumer.Autoscaling, activePrecisions, replicaCeilings); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	for _, precision := range activePrecisions {
 		targetName := deploymentsByPrecision[precision]
-		if err := r.ensurePrecisionScaledObject(ctx, &svc, precision, targetName, tsSpec.Target.Autoscaling); err != nil {
+		if err := r.ensurePrecisionScaledObject(ctx, &svc, precision, targetName, tsSpec.Target.Autoscaling, replicaCeilings); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -709,10 +718,21 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, svc *corev1.Service, autoscaling schedulingv1alpha1.AutoscalingConfig) error {
+func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, svc *corev1.Service, autoscaling schedulingv1alpha1.AutoscalingConfig, replicaCeilings map[string]int32) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	soName := fmt.Sprintf("buffer-service-router-%s", svc.Name)
 	targetName := fmt.Sprintf("buffer-service-router-%s", svc.Name)
+
+	// Apply carbon-aware replica ceiling if available
+	maxReplicas := autoscaling.MaxReplicaCount
+	componentName := "router"
+	if ceiling, ok := replicaCeilings[componentName]; ok && ceiling > 0 {
+		// Use the carbon-aware ceiling, but respect the configured max as an upper bound
+		if autoscaling.MaxReplicaCount != nil && ceiling < *autoscaling.MaxReplicaCount {
+			maxReplicas = &ceiling
+			log.Info("Applying carbon-aware replica ceiling", "component", componentName, "ceiling", ceiling, "original", *autoscaling.MaxReplicaCount)
+		}
+	}
 
 	so := &kedav1alpha1.ScaledObject{
 		ObjectMeta: metav1.ObjectMeta{
@@ -727,7 +747,7 @@ func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, 
 			PollingInterval: ptr.To[int32](5),
 			CooldownPeriod:  autoscaling.CooldownPeriod,
 			MinReplicaCount: autoscaling.MinReplicaCount,
-			MaxReplicaCount: autoscaling.MaxReplicaCount,
+			MaxReplicaCount: maxReplicas,
 			Triggers: []kedav1alpha1.ScaleTriggers{
 				{
 					Type: "cpu",
@@ -763,10 +783,21 @@ func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, 
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context, svc *corev1.Service, autoscaling schedulingv1alpha1.AutoscalingConfig, precisions []int) error {
+func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context, svc *corev1.Service, autoscaling schedulingv1alpha1.AutoscalingConfig, precisions []int, replicaCeilings map[string]int32) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	soName := fmt.Sprintf("buffer-service-consumer-%s", svc.Name)
 	targetName := fmt.Sprintf("buffer-service-consumer-%s", svc.Name)
+
+	// Apply carbon-aware replica ceiling if available
+	maxReplicas := autoscaling.MaxReplicaCount
+	componentName := "consumer"
+	if ceiling, ok := replicaCeilings[componentName]; ok && ceiling > 0 {
+		// Use the carbon-aware ceiling, but respect the configured max as an upper bound
+		if autoscaling.MaxReplicaCount != nil && ceiling < *autoscaling.MaxReplicaCount {
+			maxReplicas = &ceiling
+			log.Info("Applying carbon-aware replica ceiling", "component", componentName, "ceiling", ceiling, "original", *autoscaling.MaxReplicaCount)
+		}
+	}
 
 	rabbitmqTriggers := make([]kedav1alpha1.ScaleTriggers, 0, len(precisions))
 	for _, precision := range precisions {
@@ -796,7 +827,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 			PollingInterval: ptr.To[int32](5),
 			CooldownPeriod:  autoscaling.CooldownPeriod,
 			MinReplicaCount: autoscaling.MinReplicaCount,
-			MaxReplicaCount: autoscaling.MaxReplicaCount,
+			MaxReplicaCount: maxReplicas,
 			Triggers: append(rabbitmqTriggers,
 				kedav1alpha1.ScaleTriggers{
 					Type: "cpu",
@@ -849,7 +880,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 	return nil
 }
 
-func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Context, svc *corev1.Service, precision int, targetName string, autoscaling schedulingv1alpha1.AutoscalingConfig) error {
+func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Context, svc *corev1.Service, precision int, targetName string, autoscaling schedulingv1alpha1.AutoscalingConfig, replicaCeilings map[string]int32) error {
 	log := ctrl.LoggerFrom(ctx).WithName("[FlavourRouter]")
 	if targetName == "" {
 		return fmt.Errorf("missing deployment name for precision %d", precision)
@@ -858,6 +889,18 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 	soName := fmt.Sprintf("%s-precision-%d", svc.Name, precision)
 	directQueue := directQueueName(svc.Namespace, svc.Name, precision)
 	bufferedQueue := bufferedQueueName(svc.Namespace, svc.Name, precision)
+
+	// Apply carbon-aware replica ceiling if available
+	// All precision deployments share the "target" component ceiling
+	maxReplicas := autoscaling.MaxReplicaCount
+	componentName := "target"
+	if ceiling, ok := replicaCeilings[componentName]; ok && ceiling > 0 {
+		// Use the carbon-aware ceiling, but respect the configured max as an upper bound
+		if autoscaling.MaxReplicaCount != nil && ceiling < *autoscaling.MaxReplicaCount {
+			maxReplicas = &ceiling
+			log.Info("Applying carbon-aware replica ceiling", "component", componentName, "target", targetName, "precision", precision, "ceiling", ceiling, "original", *autoscaling.MaxReplicaCount)
+		}
+	}
 
 	so := &kedav1alpha1.ScaledObject{
 		ObjectMeta: metav1.ObjectMeta{
@@ -872,7 +915,7 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 			PollingInterval: ptr.To[int32](5),
 			CooldownPeriod:  autoscaling.CooldownPeriod,
 			MinReplicaCount: autoscaling.MinReplicaCount,
-			MaxReplicaCount: autoscaling.MaxReplicaCount,
+			MaxReplicaCount: maxReplicas,
 			Triggers: []kedav1alpha1.ScaleTriggers{
 				{
 					Type: "prometheus",

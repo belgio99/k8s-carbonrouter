@@ -99,6 +99,63 @@ the decision engine, buffer service, and the sample carbonstat flavours.
 - Helm charts in `helm/` are structured per component and aggregated by the
   umbrella chart `helm/carbonrouter-umbrella`.
 
+## Carbon-Aware Autoscaling
+
+The system implements dynamic autoscaling throttling based on carbon intensity
+and quality credit balance. During periods of high carbon intensity or low
+quality credits, the decision engine computes reduced replica ceilings that are
+automatically applied to KEDA ScaledObjects.
+
+**How it works:**
+
+1. The **decision engine** calculates a throttle factor (0.0-1.0) based on:
+   - Current carbon intensity relative to configured thresholds
+   - Quality credit balance (higher credits = less throttling)
+   - Forecast-aware strategies consider upcoming carbon intensity peaks
+
+2. The throttle factor is applied to each component's `maxReplicaCount`:
+
+   ```text
+   effective_ceiling = max(min_replicas, floor(max_replicas × throttle))
+   ```
+
+3. The **operator** reads these ceilings from `TrafficSchedule.Status.effectiveReplicaCeilings`
+   and dynamically updates KEDA ScaledObjects' `maxReplicaCount` field.
+
+4. **KEDA** respects the reduced ceiling, keeping fewer replicas active even when
+   queue depth or CPU utilization would normally trigger scale-up.
+
+This creates a carbon-aware backpressure mechanism: during unfavorable carbon
+periods, the system trades increased latency (requests queue in RabbitMQ) for
+reduced energy consumption by running fewer replicas. Quality credits prevent
+excessive throttling that would violate SLO targets.
+
+**Configuration:**
+
+Set replica bounds in the `TrafficSchedule` spec:
+
+```yaml
+apiVersion: scheduling.carbonrouter.io/v1alpha1
+kind: TrafficSchedule
+spec:
+  router:
+    autoscaling:
+      minReplicaCount: 1
+      maxReplicaCount: 10
+  consumer:
+    autoscaling:
+      minReplicaCount: 1
+      maxReplicaCount: 15
+  target:
+    autoscaling:
+      minReplicaCount: 0
+      maxReplicaCount: 20
+```
+
+The decision engine will compute carbon-aware ceilings for `router`, `consumer`,
+and `target` components. The `target` ceiling applies to all precision flavour
+deployments discovered by the operator.
+
 ## Observability
 
 All components export Prometheus metrics:
@@ -106,8 +163,9 @@ All components export Prometheus metrics:
 - Router: request counters (`router_http_requests_total`), latency histograms,
 and schedule TTL gauges.
 - Consumer: message counters, HTTP forward durations, and retry statistics.
-- Decision engine: credit ledger gauges, forecast metrics, and flavour weight
-  gauges.
+- Decision engine: credit ledger gauges, forecast metrics, flavour weight
+  gauges, and autoscaling throttle (`scheduler_processing_throttle`) and ceiling
+  metrics (`scheduler_replica_ceiling`).
 - Operator: controller-runtime metrics once the manager is running.
 
 Grafana dashboards under `grafana/` provide ready-to-import dashboards tailored

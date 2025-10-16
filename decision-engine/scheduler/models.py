@@ -345,6 +345,11 @@ class ScalingDirective:
 
         throttle = _clamp(min(credits_ratio, intensity_ratio), min_throttle, 1.0)
 
+        # Compute replica ceilings for carbon-aware autoscaling.
+        # During high carbon periods or low credit balance, reduce maxReplicas to throttle
+        # processing. This trades increased latency (queue backpressure) for reduced energy
+        # consumption by running fewer replicas. The operator applies these ceilings to
+        # KEDA ScaledObjects dynamically.
         ceilings: Dict[str, int] = {}
         if component_bounds:
             for component, bounds in component_bounds.items():
