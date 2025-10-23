@@ -1,0 +1,369 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: trafficschedules.scheduling.carbonrouter.io
+spec:
+  group: scheduling.carbonrouter.io
+  names:
+    kind: TrafficSchedule
+    listKind: TrafficScheduleList
+    plural: trafficschedules
+    singular: trafficschedule
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: TrafficSchedule is the Schema for the trafficschedules API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: TrafficScheduleSpec defines the desired state of TrafficSchedule.
+            properties:
+              consumer:
+                description: ComponentConfig defines the configuration for a specific
+                  component like router or consumer.
+                properties:
+                  autoscaling:
+                    description: AutoscalingConfig defines the autoscaling parameters
+                      for a component.
+                    properties:
+                      cooldownPeriod:
+                        format: int32
+                        type: integer
+                      cpuUtilization:
+                        format: int32
+                        type: integer
+                      maxReplicaCount:
+                        format: int32
+                        type: integer
+                      minReplicaCount:
+                        format: int32
+                        type: integer
+                    type: object
+                  debug:
+                    type: boolean
+                  resources:
+                    description: ResourceRequirements describes the compute resource
+                      requirements.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This is an alpha field and requires enabling the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
+              router:
+                description: ComponentConfig defines the configuration for a specific
+                  component like router or consumer.
+                properties:
+                  autoscaling:
+                    description: AutoscalingConfig defines the autoscaling parameters
+                      for a component.
+                    properties:
+                      cooldownPeriod:
+                        format: int32
+                        type: integer
+                      cpuUtilization:
+                        format: int32
+                        type: integer
+                      maxReplicaCount:
+                        format: int32
+                        type: integer
+                      minReplicaCount:
+                        format: int32
+                        type: integer
+                    type: object
+                  debug:
+                    type: boolean
+                  resources:
+                    description: ResourceRequirements describes the compute resource
+                      requirements.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This is an alpha field and requires enabling the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
+              scheduler:
+                description: SchedulerConfigSpec defines runtime tuning knobs for
+                  the credit scheduler.
+                properties:
+                  carbonCacheTTL:
+                    format: int32
+                    type: integer
+                  carbonTarget:
+                    type: string
+                  carbonTimeout:
+                    format: int32
+                    type: integer
+                  creditMax:
+                    type: string
+                  creditMin:
+                    type: string
+                  creditWindow:
+                    format: int32
+                    type: integer
+                  discoveryInterval:
+                    format: int32
+                    type: integer
+                  policy:
+                    type: string
+                  targetError:
+                    type: string
+                  validFor:
+                    format: int32
+                    type: integer
+                type: object
+              target:
+                description: TargetConfig defines the configuration for the target
+                  deployments.
+                properties:
+                  autoscaling:
+                    description: AutoscalingConfig defines the autoscaling parameters
+                      for a component.
+                    properties:
+                      cooldownPeriod:
+                        format: int32
+                        type: integer
+                      cpuUtilization:
+                        format: int32
+                        type: integer
+                      maxReplicaCount:
+                        format: int32
+                        type: integer
+                      minReplicaCount:
+                        format: int32
+                        type: integer
+                    type: object
+                type: object
+            type: object
+          status:
+            description: TrafficScheduleStatus defines the observed state of TrafficSchedule.
+            properties:
+              activePolicy:
+                description: ActivePolicy indicates the scheduling strategy/policy
+                  currently selected by the decision engine.
+                type: string
+              carbonForecastNext:
+                description: CarbonForecastNext is the next slot forecast in gCO2/kWh.
+                type: string
+              carbonForecastNow:
+                description: CarbonForecastNow is the current slot forecast in gCO2/kWh.
+                type: string
+              carbonIndex:
+                description: CarbonIndex reflects the current qualitative carbon intensity
+                  label.
+                type: string
+              creditBalance:
+                description: CreditBalance exposes the current credit balance maintained
+                  by the scheduler.
+                type: string
+              creditMax:
+                description: CreditMax exposes the upper bound applied to the credit
+                  ledger.
+                type: string
+              creditMin:
+                description: CreditMin exposes the lower bound applied to the credit
+                  ledger.
+                type: string
+              creditTarget:
+                description: CreditTarget denotes the configured precision error target.
+                type: string
+              creditVelocity:
+                description: CreditVelocity represents the average rate of change
+                  of the credit balance.
+                type: string
+              diagnostics:
+                additionalProperties:
+                  type: string
+                description: Diagnostics contains policy-specific telemetry useful
+                  for debugging.
+                type: object
+              effectiveReplicaCeilings:
+                additionalProperties:
+                  format: int32
+                  type: integer
+                description: EffectiveReplicaCeilings exposes throttled replica limits
+                  keyed by component name.
+                type: object
+              flavours:
+                description: Flavours contains the routing weights for each known
+                  precision level.
+                items:
+                  description: FlavourDecision describes the scheduler outcome for
+                    a specific precision flavour.
+                  properties:
+                    precision:
+                      description: Precision is expressed as an integer percentage
+                        (e.g. 100, 85, 60).
+                      type: integer
+                    weight:
+                      description: Weight represents the share of traffic (percentage)
+                        assigned to this precision.
+                      type: integer
+                  required:
+                  - precision
+                  - weight
+                  type: object
+                type: array
+              forecastSchedule:
+                description: ForecastSchedule summarises the upcoming half-hour slots
+                  as reported by the provider.
+                items:
+                  description: ForecastSlot describes a single carbon forecast interval.
+                  properties:
+                    forecast:
+                      type: string
+                    from:
+                      type: string
+                    index:
+                      type: string
+                    to:
+                      type: string
+                  required:
+                  - forecast
+                  - from
+                  - to
+                  type: object
+                type: array
+              processingThrottle:
+                description: ProcessingThrottle exports the throttle factor applied
+                  to downstream autoscaling.
+                type: string
+              validUntil:
+                description: ValidUntil specifies when the schedule should be refreshed.
+                format: date-time
+                type: string
+            required:
+            - activePolicy
+            - flavours
+            - validUntil
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
