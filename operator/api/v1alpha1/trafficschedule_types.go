@@ -95,6 +95,9 @@ type FlavourDecision struct {
 	Precision int `json:"precision"`
 	// Weight represents the share of traffic (percentage) assigned to this precision.
 	Weight int `json:"weight"`
+	// Emissions is the estimated carbon cost per request in gCO2eq for this flavour.
+	// +optional
+	Emissions string `json:"emissions,omitempty"`
 }
 
 // StrategyDecision is an alias for backward compatibility.

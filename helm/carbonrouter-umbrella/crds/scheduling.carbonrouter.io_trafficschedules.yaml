@@ -316,6 +316,10 @@ spec:
                   description: FlavourDecision describes the scheduler outcome for
                     a specific precision flavour.
                   properties:
+                    emissions:
+                      description: Emissions is the estimated carbon cost per request
+                        in gCO2eq for this flavour.
+                      type: string
                     precision:
                       description: Precision is expressed as an integer percentage
                         (e.g. 100, 85, 60).

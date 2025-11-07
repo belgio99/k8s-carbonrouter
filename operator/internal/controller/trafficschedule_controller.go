@@ -290,6 +290,7 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		status.Flavours = append(status.Flavours, schedulingv1alpha1.FlavourDecision{
 			Precision: flavour.Precision,
 			Weight:    flavour.Weight,
+			Emissions: formatFloat(flavour.CarbonIntensity),
 		})
 	}
 	if t, err := time.Parse(time.RFC3339, remote.ValidUntilISO); err == nil {
