@@ -196,7 +196,267 @@ curl http://localhost:8080/schedule/default/example-forecast-aware-global | \
 # Should show intensity_now, intensity_next, demand_now, demand_next
 ```
 
+## Manual Carbon Intensity Override (for Testing)
+
+Instead of using real Carbon Intensity UK API data, you can set manual carbon intensity values for controlled testing:
+
+### Method 1: Manual Schedule Override via API
+
+Set a complete manual schedule with custom carbon intensity:
+
+```bash
+# Port-forward to decision engine
+kubectl port-forward -n carbonshift svc/decision-engine 8080:8080
+
+# Set manual schedule with custom carbon intensity
+curl -X POST http://localhost:8080/schedule/default/example-forecast-aware-global/manual \
+  -H "Content-Type: application/json" \
+  -d '{
+    "flavourWeights": {
+      "precision-100": 0.4,
+      "precision-50": 0.35,
+      "precision-30": 0.25
+    },
+    "validUntil": "2025-11-09T15:30:00Z",
+    "carbonForecastNow": 150,
+    "carbonForecastNext": 220,
+    "credits": {
+      "balance": 0.3,
+      "velocity": 0.05
+    },
+    "processing": {
+      "throttle": 0.85,
+      "ceilings": {
+        "router": 8,
+        "consumer": 12,
+        "target": 15
+      }
+    }
+  }'
+```
+
+The manual schedule will override automatic decisions until `validUntil` expires.
+
+### Method 2: Mock Carbon API Server
+
+Create a simple mock server that returns custom carbon intensity forecasts:
+
+```bash
+# Create a simple mock server (run in a separate terminal)
+cat > mock-carbon-api.py << 'EOF'
+from flask import Flask, jsonify
+from datetime import datetime, timedelta, timezone
+
+app = Flask(__name__)
+
+# Define custom carbon intensity scenarios
+SCENARIOS = {
+    "rising": [150, 180, 220, 280, 320],  # Rising intensity (morning)
+    "peak": [300, 320, 310, 305, 295],     # Peak intensity (midday)
+    "falling": [250, 200, 150, 100, 80],   # Falling intensity (evening)
+    "low": [50, 45, 40, 38, 35],           # Very low intensity (night)
+    "volatile": [100, 250, 80, 300, 120],  # Volatile pattern
+}
+
+# Select scenario (change this to test different patterns)
+ACTIVE_SCENARIO = "rising"
+
+@app.route('/intensity/<start_time>/fw48h')
+def get_forecast(start_time):
+    """Return mock forecast schedule."""
+    now = datetime.now(timezone.utc)
+    data = []
+    
+    intensities = SCENARIOS[ACTIVE_SCENARIO]
+    
+    for i, intensity in enumerate(intensities * 10):  # Repeat pattern
+        start = now + timedelta(minutes=30*i)
+        end = start + timedelta(minutes=30)
+        data.append({
+            "from": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "to": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "intensity": {
+                "forecast": intensity,
+                "actual": intensity,
+                "index": "moderate" if intensity < 200 else "high"
+            }
+        })
+    
+    return jsonify({"data": data})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+EOF
+
+# Run the mock server
+python3 mock-carbon-api.py
+```
+
+Then configure the decision engine to use the mock API:
+
+```bash
+# Update decision-engine deployment to use mock API
+kubectl set env deployment/decision-engine -n carbonshift \
+  CARBON_API_URL=http://localhost:5000 \
+  CARBON_API_CACHE_TTL=30
+
+# Or edit the deployment directly
+kubectl edit deployment decision-engine -n carbonshift
+# Add under spec.template.spec.containers[0].env:
+#   - name: CARBON_API_URL
+#     value: "http://mock-carbon-api:5000"
+#   - name: CARBON_API_CACHE_TTL
+#     value: "30"
+```
+
+### Method 3: Custom Provider for Testing
+
+Create a test-specific carbon provider that reads from a config file:
+
+```bash
+# Create a ConfigMap with test carbon intensity values
+kubectl create configmap carbon-intensity-test -n carbonshift --from-literal=scenario='
+{
+  "schedule": [
+    {"time": "00:00", "intensity": 50},
+    {"time": "06:00", "intensity": 120},
+    {"time": "09:00", "intensity": 250},
+    {"time": "12:00", "intensity": 300},
+    {"time": "15:00", "intensity": 200},
+    {"time": "18:00", "intensity": 150},
+    {"time": "21:00", "intensity": 80}
+  ]
+}'
+
+# Mount the ConfigMap in the decision-engine pod
+# (requires updating the deployment)
+```
+
+### Test Scenarios with Manual Overrides
+
+#### Scenario A: Rising Carbon Intensity
+
+```bash
+# Morning scenario - intensity rising rapidly
+curl -X POST http://localhost:8080/schedule/default/test-schedule/manual \
+  -H "Content-Type: application/json" \
+  -d '{
+    "carbonForecastNow": 120,
+    "carbonForecastNext": 280,
+    "validUntil": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+  }'
+
+# Expected: Strategy should conserve credit (negative carbon_adjustment)
+# Check: curl http://localhost:8080/schedule/default/test-schedule | jq .diagnostics
+```
+
+#### Scenario B: Falling Carbon Intensity
+
+```bash
+# Evening scenario - intensity falling rapidly
+curl -X POST http://localhost:8080/schedule/default/test-schedule/manual \
+  -H "Content-Type: application/json" \
+  -d '{
+    "carbonForecastNow": 280,
+    "carbonForecastNext": 120,
+    "validUntil": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+  }'
+
+# Expected: Strategy should spend credit (positive carbon_adjustment)
+```
+
+#### Scenario C: High Intensity Peak
+
+```bash
+# Midday peak - very high intensity
+curl -X POST http://localhost:8080/schedule/default/test-schedule/manual \
+  -H "Content-Type: application/json" \
+  -d '{
+    "carbonForecastNow": 350,
+    "carbonForecastNext": 340,
+    "validUntil": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+  }'
+
+# Expected: High baseline precision, low throttle, conservative approach
+```
+
+#### Scenario D: Very Clean Period
+
+```bash
+# Night scenario - very low intensity
+curl -X POST http://localhost:8080/schedule/default/test-schedule/manual \
+  -H "Content-Type: application/json" \
+  -d '{
+    "carbonForecastNow": 40,
+    "carbonForecastNext": 35,
+    "validUntil": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+  }'
+
+# Expected: Aggressive green strategy, high low-precision weight
+```
+
+### Automated Test Script
+
+Create a script to cycle through scenarios:
+
+```bash
+#!/bin/bash
+# test-carbon-scenarios.sh
+
+DECISION_ENGINE="http://localhost:8080"
+NAMESPACE="default"
+SCHEDULE_NAME="test-schedule"
+
+scenarios=(
+  "rising:120:280:Should conserve credit"
+  "falling:280:120:Should spend credit"
+  "peak:350:340:High precision baseline"
+  "clean:40:35:Aggressive green strategy"
+  "stable:180:185:Balanced approach"
+)
+
+for scenario in "${scenarios[@]}"; do
+  IFS=':' read -r name now next description <<< "$scenario"
+  
+  echo "========================================="
+  echo "Testing scenario: $name"
+  echo "Description: $description"
+  echo "Carbon now: $now, next: $next"
+  echo "========================================="
+  
+  # Set manual schedule
+  valid_until=$(date -u -v+5M +%Y-%m-%dT%H:%M:%SZ)
+  curl -s -X POST "$DECISION_ENGINE/schedule/$NAMESPACE/$SCHEDULE_NAME/manual" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"carbonForecastNow\": $now,
+      \"carbonForecastNext\": $next,
+      \"validUntil\": \"$valid_until\"
+    }" | jq .
+  
+  # Wait a moment for metrics to update
+  sleep 2
+  
+  # Fetch and display results
+  echo "Results:"
+  curl -s "$DECISION_ENGINE/schedule/$NAMESPACE/$SCHEDULE_NAME" | \
+    jq '{
+      policy: .activePolicy,
+      carbon: {now: .carbonForecastNow, next: .carbonForecastNext},
+      adjustments: .diagnostics,
+      weights: .flavours | map({name: .name, weight: .weight}),
+      throttle: .processing.throttle
+    }'
+  
+  echo ""
+  echo "Press Enter to continue to next scenario..."
+  read
+done
+```
+
 ## Performance Testing
+
+```
 
 ### Load Test Script
 

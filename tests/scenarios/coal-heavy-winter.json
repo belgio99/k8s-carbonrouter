@@ -1,0 +1,16 @@
+{
+  "name": "Coal-Heavy Winter Peak",
+  "description": "Winter evening scenario with high demand and coal/gas generation",
+  "pattern": [
+    200, 220, 280, 320, 380, 420,
+    450, 480, 500, 490, 470, 450,
+    420, 400, 370, 340, 320, 290,
+    260, 240, 220, 200, 180, 190
+  ],
+  "metadata": {
+    "interval": "30min",
+    "unit": "gCO2/kWh",
+    "source": "Simulated winter peak demand",
+    "characteristics": "Sustained high intensity period"
+  }
+}

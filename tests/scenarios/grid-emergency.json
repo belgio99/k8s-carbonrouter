@@ -1,0 +1,17 @@
+   {
+  "name": "Grid Emergency",
+  "description": "Simulated grid emergency with rapid ramp-up of fossil fuel generation",
+  "pattern": [
+    150, 180, 220, 280, 350, 420,
+    480, 520, 550, 570, 560, 540,
+    510, 470, 420, 370, 320, 280,
+    240, 210, 190, 175, 165, 160
+  ],
+  "metadata": {
+    "interval": "30min",
+    "unit": "gCO2/kWh",
+    "source": "Simulated emergency scenario",
+    "characteristics": "Extreme peak followed by gradual recovery",
+    "use_case": "Test extreme throttling behavior"
+  }
+}

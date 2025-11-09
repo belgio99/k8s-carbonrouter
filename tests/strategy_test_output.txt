@@ -1,0 +1,313 @@
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:112: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  valid_until = (datetime.utcnow() + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:197: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  metrics["timestamp"] = datetime.utcnow().isoformat()
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:339: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+/Users/belgio/git-repos/k8s-carbonaware-scheduler/tests/compare_strategies.py:258: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "timestamp": datetime.utcnow().isoformat(),
+================================================================================
+CARBON-AWARE SCHEDULER - STRATEGY COMPARISON TEST
+================================================================================
+Decision Engine: http://localhost:8080
+Namespace: carbonstat
+Schedule: traffic-schedule
+Strategies: credit-greedy, forecast-aware, precision-tier, forecast-aware-global
+Scenarios: 5
+================================================================================
+
+Verifying decision engine accessibility...
+✓ Decision engine is ready
+
+Verifying TrafficSchedule exists...
+✓ TrafficSchedule carbonstat/traffic-schedule found
+
+================================================================================
+TESTING STRATEGY: CREDIT-GREEDY
+================================================================================
+  Changing policy to: credit-greedy
+  Waiting 10s for policy to activate...
+
+  Testing: Morning: Rising carbon intensity
+    Carbon: 120 → 280 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Evening: Falling carbon intensity
+    Carbon: 280 → 120 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Midday: Peak carbon intensity
+    Carbon: 350 → 340 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Night: Very clean period
+    Carbon: 40 → 35 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Stable carbon intensity
+    Carbon: 180 → 185 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+================================================================================
+TESTING STRATEGY: FORECAST-AWARE
+================================================================================
+  Changing policy to: forecast-aware
+  Waiting 10s for policy to activate...
+
+  Testing: Morning: Rising carbon intensity
+    Carbon: 120 → 280 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Evening: Falling carbon intensity
+    Carbon: 280 → 120 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Midday: Peak carbon intensity
+    Carbon: 350 → 340 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Night: Very clean period
+    Carbon: 40 → 35 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Stable carbon intensity
+    Carbon: 180 → 185 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+================================================================================
+TESTING STRATEGY: PRECISION-TIER
+================================================================================
+  Changing policy to: precision-tier
+  Waiting 10s for policy to activate...
+
+  Testing: Morning: Rising carbon intensity
+    Carbon: 120 → 280 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Evening: Falling carbon intensity
+    Carbon: 280 → 120 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Midday: Peak carbon intensity
+    Carbon: 350 → 340 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Night: Very clean period
+    Carbon: 40 → 35 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Stable carbon intensity
+    Carbon: 180 → 185 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+================================================================================
+TESTING STRATEGY: FORECAST-AWARE-GLOBAL
+================================================================================
+  Changing policy to: forecast-aware-global
+  Waiting 10s for policy to activate...
+
+  Testing: Morning: Rising carbon intensity
+    Carbon: 120 → 280 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Evening: Falling carbon intensity
+    Carbon: 280 → 120 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Midday: Peak carbon intensity
+    Carbon: 350 → 340 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Night: Very clean period
+    Carbon: 40 → 35 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+  Testing: Stable carbon intensity
+    Carbon: 180 → 185 gCO2/kWh
+    Waiting 5s for schedule update...
+    ✓ Throttle: 1.00, Weights: 0% / 0% / 0%
+
+================================================================================
+TEST RESULTS SUMMARY
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+Scenario: RISING
+Carbon: 120 → 280 gCO2/kWh
+Description: Morning: Rising carbon intensity
+────────────────────────────────────────────────────────────────────────────────
+
+Strategy                  Throttle   precision-100   precision-50    precision-30   
+--------------------------------------------------------------------------------
+credit-greedy             1.00       0.0            % 0.0            % 0.0            %
+forecast-aware            1.00       0.0            % 0.0            % 0.0            %
+precision-tier            1.00       0.0            % 0.0            % 0.0            %
+forecast-aware-global     1.00       0.0            % 0.0            % 0.0            %
+
+Strategy                  Carbon Adj   Demand Adj   Total Adj   
+------------------------------------------------------------
+
+────────────────────────────────────────────────────────────────────────────────
+Scenario: FALLING
+Carbon: 280 → 120 gCO2/kWh
+Description: Evening: Falling carbon intensity
+────────────────────────────────────────────────────────────────────────────────
+
+Strategy                  Throttle   precision-100   precision-50    precision-30   
+--------------------------------------------------------------------------------
+credit-greedy             1.00       0.0            % 0.0            % 0.0            %
+forecast-aware            1.00       0.0            % 0.0            % 0.0            %
+precision-tier            1.00       0.0            % 0.0            % 0.0            %
+forecast-aware-global     1.00       0.0            % 0.0            % 0.0            %
+
+Strategy                  Carbon Adj   Demand Adj   Total Adj   
+------------------------------------------------------------
+
+────────────────────────────────────────────────────────────────────────────────
+Scenario: PEAK
+Carbon: 350 → 340 gCO2/kWh
+Description: Midday: Peak carbon intensity
+────────────────────────────────────────────────────────────────────────────────
+
+Strategy                  Throttle   precision-100   precision-50    precision-30   
+--------------------------------------------------------------------------------
+credit-greedy             1.00       0.0            % 0.0            % 0.0            %
+forecast-aware            1.00       0.0            % 0.0            % 0.0            %
+precision-tier            1.00       0.0            % 0.0            % 0.0            %
+forecast-aware-global     1.00       0.0            % 0.0            % 0.0            %
+
+Strategy                  Carbon Adj   Demand Adj   Total Adj   
+------------------------------------------------------------
+
+────────────────────────────────────────────────────────────────────────────────
+Scenario: CLEAN
+Carbon: 40 → 35 gCO2/kWh
+Description: Night: Very clean period
+────────────────────────────────────────────────────────────────────────────────
+
+Strategy                  Throttle   precision-100   precision-50    precision-30   
+--------------------------------------------------------------------------------
+credit-greedy             1.00       0.0            % 0.0            % 0.0            %
+forecast-aware            1.00       0.0            % 0.0            % 0.0            %
+precision-tier            1.00       0.0            % 0.0            % 0.0            %
+forecast-aware-global     1.00       0.0            % 0.0            % 0.0            %
+
+Strategy                  Carbon Adj   Demand Adj   Total Adj   
+------------------------------------------------------------
+
+────────────────────────────────────────────────────────────────────────────────
+Scenario: STABLE
+Carbon: 180 → 185 gCO2/kWh
+Description: Stable carbon intensity
+────────────────────────────────────────────────────────────────────────────────
+
+Strategy                  Throttle   precision-100   precision-50    precision-30   
+--------------------------------------------------------------------------------
+credit-greedy             1.00       0.0            % 0.0            % 0.0            %
+forecast-aware            1.00       0.0            % 0.0            % 0.0            %
+precision-tier            1.00       0.0            % 0.0            % 0.0            %
+forecast-aware-global     1.00       0.0            % 0.0            % 0.0            %
+
+Strategy                  Carbon Adj   Demand Adj   Total Adj   
+------------------------------------------------------------
+
+✓ Results saved to: strategy_comparison_20251109_101642.json
+
+================================================================================
+TEST COMPLETED
+================================================================================

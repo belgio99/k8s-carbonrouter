@@ -1,0 +1,17 @@
+{
+  "name": "Solar-Heavy Summer Day",
+  "description": "Summer day with strong solar generation during daylight hours",
+  "pattern": [
+    120, 110, 100, 95, 90, 85,
+    75, 60, 40, 25, 15, 10,
+    8, 12, 18, 30, 50, 75,
+    100, 120, 130, 135, 130, 125
+  ],
+  "metadata": {
+    "interval": "30min",
+    "unit": "gCO2/kWh",
+    "source": "Simulated solar-heavy summer day",
+    "characteristics": "Very low midday intensity due to solar",
+    "peak_solar": "11:00-14:00"
+  }
+}

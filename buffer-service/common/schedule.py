@@ -49,12 +49,13 @@ class TrafficScheduleManager:
         """Return the list of flavour names currently defined in the schedule."""
 
         async with self._lock:
-            rules = self._current.get("flavourRules", []) or []
+            flavours = self._current.get("flavours", []) or []
         result: list[str] = []
-        for rule in rules:
-            name = rule.get("flavourName")
-            if isinstance(name, str):
-                result.append(name)
+        for flavour in flavours:
+            # Build flavour name from precision (e.g., 100 -> "precision-100")
+            precision = flavour.get("precision")
+            if isinstance(precision, (int, float)):
+                result.append(f"precision-{int(precision)}")
         return result
 
     async def load_once(self) -> None:

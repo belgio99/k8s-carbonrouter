@@ -1,0 +1,16 @@
+{
+  "name": "Wind-Heavy Pattern",
+  "description": "Scenario with high wind generation causing volatility and low average intensity",
+  "pattern": [
+    50, 35, 60, 40, 70, 45,
+    55, 30, 65, 40, 75, 50,
+    60, 35, 70, 45, 80, 55,
+    65, 40, 75, 50, 85, 60
+  ],
+  "metadata": {
+    "interval": "30min",
+    "unit": "gCO2/kWh",
+    "source": "Simulated high wind scenario",
+    "characteristics": "High volatility, low average"
+  }
+}

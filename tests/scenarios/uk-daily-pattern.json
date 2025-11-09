@@ -1,0 +1,17 @@
+{
+  "name": "Typical UK Daily Pattern",
+  "description": "Realistic 24-hour carbon intensity pattern for UK grid based on typical renewable mix",
+  "pattern": [
+    45, 42, 38, 35, 33, 32,
+    35, 40, 55, 85, 130, 180,
+    240, 290, 320, 330, 325, 310,
+    280, 240, 190, 140, 90, 60
+  ],
+  "metadata": {
+    "interval": "30min",
+    "unit": "gCO2/kWh",
+    "source": "Synthetic based on UK grid patterns",
+    "peak_hours": "12:00-16:00",
+    "cleanest_hours": "03:00-06:00"
+  }
+}
