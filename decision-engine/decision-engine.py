@@ -383,6 +383,66 @@ class SchedulerSession:
         """Request an immediate schedule refresh."""
         self._refresh_event.set()
 
+    def process_feedback(self, flavour_counts: Dict[str, int], total_requests: int) -> Dict[str, Any]:
+        """
+        Process feedback from router about actual request distribution.
+        
+        Calculates the realized mean precision based on actual requests sent
+        to each flavour, then updates the credit ledger. This allows the
+        scheduler to react to real quality delivered vs predicted quality.
+        
+        Args:
+            flavour_counts: Dictionary mapping flavour names to request counts
+                           e.g., {"precision-30": 1800, "precision-50": 1400, "precision-100": 16300}
+            total_requests: Total number of requests in the feedback window
+            
+        Returns:
+            Dictionary with feedback processing results including:
+            - realized_precision: Weighted mean precision from actual requests
+            - credit_balance: Updated credit balance after ledger update
+            - credit_velocity: Current credit velocity (trend)
+        """
+        with self._lock:
+            engine = self._engine
+            flavours = self._flavours or []
+        
+        # Build precision map from flavour names to precision values
+        precision_map: Dict[str, float] = {}
+        for flavour_profile in flavours:
+            if flavour_profile.name:
+                precision_map[flavour_profile.name] = flavour_profile.precision
+        
+        # Calculate weighted mean precision from actual requests
+        weighted_sum = 0.0
+        for flavour_name, count in flavour_counts.items():
+            precision = precision_map.get(flavour_name, 1.0)
+            weighted_sum += precision * count
+        
+        realized_precision = weighted_sum / total_requests if total_requests > 0 else 1.0
+        
+        # Update credit ledger with realized precision
+        credit_balance = engine.ledger.update(realized_precision)
+        credit_velocity = engine.ledger.velocity()
+        
+        LOGGER.info(
+            "Feedback processed for %s/%s: %d requests, realized_precision=%.4f, credit_balance=%.4f",
+            self.namespace,
+            self.name,
+            total_requests,
+            realized_precision,
+            credit_balance,
+        )
+        
+        # Trigger schedule refresh to react to credit change
+        self._refresh_event.set()
+        
+        return {
+            "realized_precision": realized_precision,
+            "credit_balance": credit_balance,
+            "credit_velocity": credit_velocity,
+            "total_requests": total_requests,
+        }
+
     def _run(self) -> None:
         """
         Main scheduler loop - runs in background thread.
@@ -523,6 +583,33 @@ class SchedulerRegistry:
         """
         session = self._ensure_session(namespace, name)
         session.set_manual_override(payload)
+
+    def process_feedback(
+        self, namespace: str, name: str, flavour_counts: Dict[str, int], total_requests: int
+    ) -> Dict[str, Any]:
+        """
+        Process feedback about actual request distribution.
+        
+        Forwards feedback to the appropriate scheduler session for credit ledger update.
+        
+        Args:
+            namespace: Kubernetes namespace
+            name: TrafficSchedule name
+            flavour_counts: Dictionary mapping flavour names to request counts
+            total_requests: Total number of requests in feedback window
+            
+        Returns:
+            Dictionary with feedback processing results
+            
+        Raises:
+            KeyError: If no session exists for this namespace/name
+        """
+        key = (namespace, name)
+        with self._lock:
+            session = self._sessions.get(key)
+        if session is None:
+            raise KeyError(key)
+        return session.process_feedback(flavour_counts, total_requests)
 
     def ensure_default(self) -> SchedulerSession:
         """
@@ -685,6 +772,57 @@ def configure_schedule(namespace: str, name: str) -> Any:
         return jsonify({"error": "payload must be an object"}), 400
     registry.configure(namespace, name, payload)
     return jsonify({"status": "accepted"}), 202
+
+
+@app.route("/feedback/<namespace>/<name>", methods=["POST"])
+def receive_feedback(namespace: str, name: str) -> Any:
+    """
+    Receive feedback about actual request distribution from the router.
+    
+    The router reports the actual number of requests sent to each flavour
+    during a sampling window. This enables the decision engine to:
+    1. Calculate the realized mean precision (weighted by actual requests)
+    2. Update the credit ledger based on real quality delivered (not predictions)
+    3. Allow policies to react to carbon changes via credit balance shifts
+    
+    Args:
+        namespace: Kubernetes namespace
+        name: TrafficSchedule name
+        
+    Request body:
+        {
+            "window_seconds": 30,
+            "total_requests": 19500,
+            "flavour_counts": {
+                "precision-30": 1800,
+                "precision-50": 1400,
+                "precision-100": 16300
+            }
+        }
+    
+    Returns:
+        200: Feedback processed
+        400: Invalid payload
+        404: Schedule not found
+    """
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"error": "payload must be an object"}), 400
+    
+    flavour_counts = payload.get("flavour_counts", {})
+    total_requests = payload.get("total_requests", 0)
+    
+    if not flavour_counts or total_requests <= 0:
+        return jsonify({"error": "invalid feedback data"}), 400
+    
+    try:
+        result = registry.process_feedback(namespace, name, flavour_counts, total_requests)
+        return jsonify(result), 200
+    except KeyError:
+        return jsonify({"error": f"unknown schedule {namespace}/{name}"}), 404
+    except Exception as e:
+        LOGGER.error("Feedback processing failed: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/healthz")

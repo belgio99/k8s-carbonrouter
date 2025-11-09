@@ -30,6 +30,7 @@ from prometheus_client import (
     Histogram,
     start_http_server,
 )
+import httpx
 
 from common.utils import DEFAULT_SCHEDULE, b64dec, b64enc, debug, log, weighted_choice
 from common.schedule import TrafficScheduleManager
@@ -43,6 +44,10 @@ TS_NAMESPACE: str = os.getenv("TS_NAMESPACE", "default")
 METRICS_PORT: int = int(os.getenv("METRICS_PORT", "8001"))
 TARGET_SVC_NAME: str = os.getenv("TARGET_SVC_NAME", "unknown-svc").lower()
 TARGET_SVC_NAMESPACE: str = os.getenv("TARGET_SVC_NAMESPACE", "default").lower()
+
+# Decision engine configuration for feedback reporting
+DECISION_ENGINE_URL: str = os.getenv("DECISION_ENGINE_URL", "http://carbonrouter-decision-engine.carbonrouter-system.svc.cluster.local")
+FEEDBACK_INTERVAL_SEC: int = int(os.getenv("FEEDBACK_INTERVAL_SEC", "30"))
 
 RPC_TIMEOUT_SEC: float = float(os.getenv("RPC_TIMEOUT_SEC", "60"))
 
@@ -286,6 +291,78 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
 
 
 # ────────────────────────────────────
+# Feedback reporter
+# ────────────────────────────────────
+async def feedback_reporter_loop() -> None:
+    """
+    Background task that reports actual request distribution to the decision engine.
+    
+    Every FEEDBACK_INTERVAL_SEC seconds:
+    1. Reads current Prometheus metrics for requests per flavour
+    2. Calculates delta since last report
+    3. Sends feedback to decision engine via POST /feedback
+    
+    This enables the decision engine to update the credit ledger based on
+    actual realized precision from completed requests, not just predictions.
+    """
+    last_reported: Dict[str, float] = {}
+    
+    while True:
+        try:
+            await asyncio.sleep(FEEDBACK_INTERVAL_SEC)
+            
+            # Read current metrics from Prometheus
+            # We need to access the Counter metrics we're tracking
+            from prometheus_client import REGISTRY
+            
+            current_counts: Dict[str, float] = {}
+            for metric in REGISTRY.collect():
+                if metric.name == "router_http_requests_total":
+                    for sample in metric.samples:
+                        # Only count successful requests (status 200)
+                        labels = sample.labels
+                        if labels.get("status") == "200" and labels.get("qtype") == "queue":
+                            flavour = labels.get("flavour", "")
+                            if flavour and flavour.startswith("precision-"):
+                                current_counts[flavour] = current_counts.get(flavour, 0) + sample.value
+            
+            # Calculate delta since last report
+            delta_counts: Dict[str, int] = {}
+            for flavour, count in current_counts.items():
+                last_count = last_reported.get(flavour, 0)
+                delta = int(count - last_count)
+                if delta > 0:
+                    delta_counts[flavour] = delta
+            
+            last_reported = dict(current_counts)
+            
+            # If we have data to report, send it
+            if delta_counts:
+                total_requests = sum(delta_counts.values())
+                feedback_payload = {
+                    "window_seconds": FEEDBACK_INTERVAL_SEC,
+                    "total_requests": total_requests,
+                    "flavour_counts": delta_counts,
+                }
+                
+                # Send feedback to decision engine
+                import httpx
+                feedback_url = f"{DECISION_ENGINE_URL}/feedback/{TS_NAMESPACE}/{TS_NAME}"
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    try:
+                        response = await client.post(feedback_url, json=feedback_payload)
+                        if response.status_code == 200:
+                            log.debug(f"Feedback reported: {total_requests} requests across {len(delta_counts)} flavours")
+                        else:
+                            log.warning(f"Feedback report failed: HTTP {response.status_code}")
+                    except Exception as e:
+                        log.warning(f"Failed to send feedback to decision engine: {e}")
+        
+        except Exception as e:
+            log.error(f"Error in feedback reporter: {e}")
+
+
+# ────────────────────────────────────
 # Main
 # ────────────────────────────────────
 async def main() -> None:
@@ -314,6 +391,7 @@ async def main() -> None:
     # Now start background tasks
     loop.create_task(schedule_mgr.watch_forever())
     loop.create_task(schedule_mgr.expiry_guard())
+    loop.create_task(feedback_reporter_loop())
 
     app = create_app(schedule_mgr)
     log_level = "info" if os.getenv("DEBUG", "false").lower() == "true" else "warning"

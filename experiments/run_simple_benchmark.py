@@ -27,7 +27,7 @@ ENGINE_NAMESPACE = "carbonrouter-system"
 ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 
 # Test configuration
-TEST_DURATION_MINUTES = 20
+TEST_DURATION_MINUTES = 10
 SAMPLE_INTERVAL_SECONDS = 30
 LOCUST_USERS = 150
 LOCUST_SPAWN_RATE = 50
@@ -122,6 +122,19 @@ def get_schedule_status() -> Dict[str, Any]:
     ])
     return json.loads(result.stdout).get("status", {})
 
+def get_decision_engine_schedule() -> Dict[str, Any]:
+    """Get schedule data from decision engine including flavour details."""
+    try:
+        response = requests.get(
+            f"http://127.0.0.1:18004/schedule/{NAMESPACE}/{SCHEDULE_NAME}",
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"  ⚠️  Warning: Could not fetch decision engine schedule: {e}")
+    return {}
+
 def start_locust_background(policy_dir: Path) -> subprocess.Popen:
     """Start Locust in headless mode, return process handle."""
     locustfile = Path(__file__).parent / "locust_router.py"
@@ -165,8 +178,14 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
         json.dumps(schedule_before, indent=2), encoding="utf-8"
     )
     
-    # Parse precision info
-    flavours = schedule_before.get("flavours", [])
+    # Get flavour info from decision engine (has name and carbonIntensity)
+    engine_schedule = get_decision_engine_schedule()
+    (policy_dir / "engine_schedule_before.json").write_text(
+        json.dumps(engine_schedule, indent=2), encoding="utf-8"
+    )
+    
+    # Parse precision and carbon info from decision engine data
+    flavours = engine_schedule.get("flavours", [])
     precision_map = {}
     carbon_intensity_map = {}
     for f in flavours:
@@ -200,7 +219,8 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
         writer.writerow([
             "timestamp", "elapsed_seconds", "delta_requests", "mean_precision",
             "credit_balance", "credit_velocity", "engine_avg_precision",
-            "carbon_now", "carbon_next"
+            "carbon_now", "carbon_next",
+            "requests_precision_30", "requests_precision_50", "requests_precision_100"
         ])
         csvfile.flush()
         
@@ -243,9 +263,9 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                         engine_data["credit_velocity"] = value
                     elif "avg_precision" in key:
                         engine_data["avg_precision"] = value
-                    elif "carbon_forecast_now" in key:
+                    elif 'horizon="now"' in key and "scheduler_forecast_intensity" in key:
                         engine_data["carbon_now"] = value
-                    elif "carbon_forecast_next" in key:
+                    elif 'horizon="next"' in key and "scheduler_forecast_intensity" in key:
                         engine_data["carbon_next"] = value
                 
                 # Write row
@@ -258,7 +278,10 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                     f"{engine_data.get('credit_velocity', ''):.4f}" if 'credit_velocity' in engine_data else "",
                     f"{engine_data.get('avg_precision', ''):.4f}" if 'avg_precision' in engine_data else "",
                     f"{engine_data.get('carbon_now', ''):.1f}" if 'carbon_now' in engine_data else "",
-                    f"{engine_data.get('carbon_next', ''):.1f}" if 'carbon_next' in engine_data else ""
+                    f"{engine_data.get('carbon_next', ''):.1f}" if 'carbon_next' in engine_data else "",
+                    int(delta_requests.get("precision-30", 0)),
+                    int(delta_requests.get("precision-50", 0)),
+                    int(delta_requests.get("precision-100", 0))
                 ])
                 csvfile.flush()
                 
@@ -324,7 +347,18 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                 carbon = carbon_intensity_map.get(flavour, 0.0)
                 mean_carbon_intensity += (count / total_requests) * carbon
     
-    credit_info = schedule_after.get("credits", {})
+    # Get credit info from final engine metrics
+    final_engine_metrics = parse_prometheus_metrics(engine_metrics_final_text)
+    credit_balance_final = None
+    credit_velocity_final = None
+    avg_precision_final = None
+    for key, value in final_engine_metrics.items():
+        if "credit_balance" in key:
+            credit_balance_final = value
+        elif "credit_velocity" in key:
+            credit_velocity_final = value
+        elif "avg_precision" in key:
+            avg_precision_final = value
     
     summary = {
         "policy": policy,
@@ -335,9 +369,9 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
         "requests_by_flavour": requests_delta,
         "mean_precision": weighted_precision_final,
         "mean_carbon_intensity": mean_carbon_intensity,
-        "credit_balance_final": credit_info.get("balance"),
-        "credit_velocity_final": credit_info.get("velocity"),
-        "avg_precision_reported": schedule_after.get("avgPrecision"),
+        "credit_balance_final": credit_balance_final,
+        "credit_velocity_final": credit_velocity_final,
+        "avg_precision_reported": avg_precision_final,
     }
     
     (policy_dir / "summary.json").write_text(
@@ -350,7 +384,7 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     print(f"    Total requests: {int(total_requests)}")
     print(f"    Mean precision: {weighted_precision_final:.3f}")
     print(f"    Mean carbon intensity: {mean_carbon_intensity:.1f} gCO₂/kWh")
-    print(f"    Final credit balance: {credit_info.get('balance', 'N/A')}")
+    print(f"    Final credit balance: {credit_balance_final if credit_balance_final is not None else 'N/A'}")
     
     return summary
 

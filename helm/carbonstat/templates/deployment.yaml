@@ -6,6 +6,9 @@ metadata:
   labels:
     {{- include "carbonstat.labels" $ | nindent 4 }}
     carbonstat.precision: {{ .precision | quote }}
+    {{- if .carbonIntensity }}
+    carbonstat.emissions: {{ .carbonIntensity | quote }}
+    {{- end }}
     carbonrouter/parent-service: "carbonstat"
 spec:
   {{- if not $.Values.autoscaling.enabled }}
