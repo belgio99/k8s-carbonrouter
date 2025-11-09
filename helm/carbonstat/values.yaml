@@ -123,12 +123,12 @@ tolerations: []
 affinity: {}
 
 instances:
-  - name: high-power
+  - name: precision-100
     flavour: "high"
     precision: 100
-  - name: mid-power
+  - name: precision-50
     flavour: "mid"
     precision: 50
-  - name: low-power
+  - name: precision-30
     flavour: "low"
     precision: 30

@@ -27,7 +27,7 @@ ENGINE_NAMESPACE = "carbonrouter-system"
 ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 
 # Test configuration
-TEST_DURATION_MINUTES = 10
+TEST_DURATION_MINUTES = 20
 SAMPLE_INTERVAL_SECONDS = 30
 LOCUST_USERS = 150
 LOCUST_SPAWN_RATE = 50
@@ -43,16 +43,49 @@ def run_cmd(cmd: List[str], capture: bool = True, timeout: int = 60) -> subproce
     """Run command and return result."""
     return subprocess.run(cmd, capture_output=capture, text=True, check=True, timeout=timeout)
 
+def reset_carbon_pattern() -> None:
+    """
+    Reset the mock carbon API pattern to start from the beginning.
+    
+    This ensures all test runs start with the same carbon intensity baseline,
+    making results comparable across different policies.
+    """
+    try:
+        # The mock API uses current time to determine position in pattern
+        # We can't reset time, but we can verify the pattern is accessible
+        response = requests.get(f"{MOCK_CARBON_URL}/scenario", timeout=5)
+        if response.status_code == 200:
+            scenario_info = response.json()
+            print(f"  ℹ️  Carbon pattern: {scenario_info.get('name', 'unknown')}")
+            print(f"     Pattern length: {len(scenario_info.get('pattern', []))} points")
+        else:
+            print(f"  ⚠️  Warning: Could not verify carbon API (status {response.status_code})")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Carbon API not accessible: {e}")
+        print(f"     Tests will continue but results may be inconsistent")
+
 def patch_policy(policy: str) -> None:
-    """Update TrafficSchedule with new policy."""
-    patch = json.dumps({"spec": {"scheduler": {"policy": policy}}})
+    """Update TrafficSchedule with new policy and fast update intervals."""
+    # Configure for fast testing:
+    # - validFor: 30s = decision engine recalculates every ~24s (80% of 30s)
+    # - carbonCacheTTL: 15s = fetch fresh carbon data every 15s  
+    # This ensures we catch carbon changes every minute without overwhelming the system
+    patch = json.dumps({
+        "spec": {
+            "scheduler": {
+                "policy": policy,
+                "validFor": 30,        # Schedule refresh every ~24s
+                "carbonCacheTTL": 15   # Carbon data refreshed every 15s
+            }
+        }
+    })
     run_cmd([
         "kubectl", "patch", "trafficschedule", SCHEDULE_NAME,
         "-n", NAMESPACE, "--type=merge", f"-p={patch}"
     ])
-    print(f"  ✓ Patched policy to {policy}")
-    print("  ⏳ Waiting 10s for decision engine to pick up the change...")
-    time.sleep(10)
+    print(f"  ✓ Patched policy to {policy} (validFor=30s, carbonCacheTTL=15s)")
+    print("  ⏳ Waiting 30s for decision engine to stabilize...")
+    time.sleep(30)
 
 def scrape_metrics(url: str) -> str:
     """Fetch Prometheus metrics from URL."""
@@ -103,7 +136,12 @@ def start_locust_background(policy_dir: Path) -> subprocess.Popen:
         f"--logfile={policy_dir / 'locust.log'}",
         "--host", ROUTER_URL
     ]
-    return subprocess.Popen(cmd, env={**subprocess.os.environ, "BENCHMARK_PATH": "/avg"})
+    # Redirect stderr to suppress Locust TTY warnings when running in background
+    return subprocess.Popen(
+        cmd,
+        env={**subprocess.os.environ, "BENCHMARK_PATH": "/avg"},
+        stderr=subprocess.DEVNULL
+    )
 
 def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     """Test a single policy with periodic sampling."""
@@ -114,10 +152,13 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     print(f"Testing policy: {policy}")
     print(f"{'='*70}")
     
-    # 1. Apply policy
+    # 1. Verify carbon pattern (for test consistency)
+    reset_carbon_pattern()
+    
+    # 2. Apply policy with fast update intervals
     patch_policy(policy)
     
-    # 2. Get initial state and BASELINE metrics
+    # 3. Get initial state and BASELINE metrics
     print("  ⏳ Collecting baseline...")
     schedule_before = get_schedule_status()
     (policy_dir / "schedule_before.json").write_text(

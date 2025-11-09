@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 import uuid
 import time
 from typing import Any, Dict
@@ -30,7 +31,7 @@ from prometheus_client import (
     start_http_server,
 )
 
-from common.utils import DEFAULT_SCHEDULE, b64dec, b64enc, debug, weighted_choice
+from common.utils import DEFAULT_SCHEDULE, b64dec, b64enc, debug, log, weighted_choice
 from common.schedule import TrafficScheduleManager
 
 # ────────────────────────────────────
@@ -163,17 +164,25 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         urgent = request.headers.get("x-urgent", "false").lower() == "true"
         forced_flavour = request.headers.get("x-carbonrouter")
 
-        flavour_weights = {
-            str(r.get("flavourName")): int(r.get("weight", 0))
-            for r in schedule.get("flavourRules", [])
-            if r.get("flavourName")
-        }
-        if not flavour_weights:
-            flavour_weights = {
-                str(r.get("flavourName")): int(r.get("weight", 0))
-                for r in DEFAULT_SCHEDULE.get("flavourRules", [])
-                if r.get("flavourName")
-            }
+        # Read flavours from TrafficSchedule status (not flavourRules)
+        # Structure: [{"precision": 30, "weight": 8}, {"precision": 50, "weight": 8}, ...]
+        flavours = schedule.get("flavours", [])
+        if not flavours:
+            # No schedule available - FAIL the request
+            return Response(
+                content=b'{"error": "No TrafficSchedule available - router cannot route requests"}',
+                status_code=503,
+                media_type="application/json",
+            )
+        
+        # Build flavour_weights from flavours array
+        flavour_weights = {}
+        for f in flavours:
+            precision = f.get("precision")
+            weight = f.get("weight", 0)
+            if precision is not None:
+                flavour_name = f"precision-{int(precision)}"
+                flavour_weights[flavour_name] = int(weight)
 
         headers: Dict[str, str] = dict(request.headers)
         if urgent:
@@ -181,7 +190,12 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
 
         candidate_weights = {k: v for k, v in flavour_weights.items() if v > 0}
         if not candidate_weights:
-            candidate_weights = {k: 1 for k in flavour_weights.keys()} or {"default": 1}
+            # All weights are zero - cannot route
+            return Response(
+                content=b'{"error": "All flavours have zero weight - cannot route"}',
+                status_code=503,
+                media_type="application/json",
+            )
 
         if forced_flavour and forced_flavour in candidate_weights:
             flavour = forced_flavour
@@ -281,7 +295,23 @@ async def main() -> None:
     schedule_mgr = TrafficScheduleManager(TS_NAME, TS_NAMESPACE)
 
     loop = asyncio.get_running_loop()
-    loop.create_task(schedule_mgr.load_once())
+    
+    # Load schedule FIRST - don't start server until we have a valid schedule
+    log.info("Loading initial TrafficSchedule...")
+    await schedule_mgr.load_once()
+    
+    # Verify we have flavours before starting
+    initial_schedule = await schedule_mgr.snapshot()
+    flavours = initial_schedule.get("flavours", [])
+    if not flavours:
+        log.error("FATAL: TrafficSchedule has no flavours - cannot start router")
+        log.error("Router requires a valid TrafficSchedule with flavours to operate")
+        sys.exit(1)
+    
+    flavour_list = [f"precision-{f.get('precision')}" for f in flavours if f.get("precision")]
+    log.info(f"Router ready with flavours: {flavour_list}")
+    
+    # Now start background tasks
     loop.create_task(schedule_mgr.watch_forever())
     loop.create_task(schedule_mgr.expiry_guard())
 

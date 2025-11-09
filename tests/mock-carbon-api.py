@@ -27,7 +27,7 @@ from typing import List, Dict, Any
 
 from flask import Flask, jsonify, request
 
-STEP_MINUTES = 30
+STEP_MINUTES = 1
 
 app = Flask(__name__)
 
@@ -81,10 +81,27 @@ SCENARIOS = {
         "pattern": [100, 80, 50, 30, 20, 15, 25, 40, 60],
         "repeat": False,
     },
+    "fast-test": {
+        "name": "Fast Test Pattern (20 min)",
+        "description": "Quick scenario for testing: good→bad→good with sudden spike at end",
+        "pattern": [
+            # Minutes 0-3: Good start (low carbon)
+            50, 55, 60,
+            # Minutes 3-10: Gradual degradation (getting worse)
+            80, 120, 160, 200, 250, 300, 350,
+            # Minutes 10-15: Moderate improvement
+            300, 270, 240, 200, 180,
+            # Minutes 15-18: Recovery (getting better)
+            150, 120, 90,
+            # Minutes 18-20: Sudden spike event (test reactiveness)
+            400, 450
+        ],
+        "repeat": False,
+    },
 }
 
 # Current active scenario
-active_scenario = "rising"
+active_scenario = "fast-test"
 custom_pattern = None
 
 

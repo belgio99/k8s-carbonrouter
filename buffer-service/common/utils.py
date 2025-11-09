@@ -20,11 +20,11 @@ def weighted_choice(weights: Dict[str, int]) -> str:
 
 # Fallback schedule
 DEFAULT_SCHEDULE = {
-    "flavourWeights": {"precision-100": 60, "precision-85": 30, "precision-70": 10},
+    "flavourWeights": {"precision-100": 60, "precision-50": 30, "precision-30": 10},
     "flavourRules": [
         {"flavourName": "precision-100", "precision": 100, "weight": 60},
-        {"flavourName": "precision-85", "precision": 85, "weight": 30},
-        {"flavourName": "precision-70", "precision": 70, "weight": 10},
+        {"flavourName": "precision-50", "precision": 50, "weight": 30},
+        {"flavourName": "precision-30", "precision": 30, "weight": 10},
     ],
     "processing": {
         "throttle": 1.0,
