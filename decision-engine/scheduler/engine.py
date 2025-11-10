@@ -276,7 +276,9 @@ class SchedulerEngine:
         initial_flavours = provided_flavours if provided_flavours else default_flavours
         self._fallback_flavours = list(default_flavours)
         self.registry = FlavourRegistry(initial_flavours)
-        self.forecast_manager = ForecastManager(CarbonForecastProvider(), DemandEstimator())
+        # Pass carbon_cache_ttl from config to provider
+        carbon_provider = CarbonForecastProvider(cache_ttl=self.config.carbon_cache_ttl)
+        self.forecast_manager = ForecastManager(carbon_provider, DemandEstimator())
         self.policy = self._build_policy(self.config.policy_name)
         self._lock = threading.Lock()
 
