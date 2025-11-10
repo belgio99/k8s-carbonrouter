@@ -36,12 +36,67 @@ LOCUST_SPAWN_RATE = 50
 ROUTER_URL = "http://127.0.0.1:18000"
 ROUTER_METRICS_URL = "http://127.0.0.1:18001/metrics"
 CONSUMER_METRICS_URL = "http://127.0.0.1:18002/metrics"
+ENGINE_URL = "http://127.0.0.1:18004"
 ENGINE_METRICS_URL = "http://127.0.0.1:18003/metrics"
 MOCK_CARBON_URL = "http://127.0.0.1:5001"
 
 def run_cmd(cmd: List[str], capture: bool = True, timeout: int = 60) -> subprocess.CompletedProcess:
     """Run command and return result."""
     return subprocess.run(cmd, capture_output=capture, text=True, check=True, timeout=timeout)
+
+
+def check_port_forwards() -> bool:
+    """
+    Check if required port-forwards are running and accessible.
+    
+    Returns True if all port-forwards are working, False otherwise.
+    """
+    urls_to_check = [
+        (ROUTER_METRICS_URL, "Router metrics"),
+        (CONSUMER_METRICS_URL, "Consumer metrics"),
+        (ENGINE_URL, "Decision engine"),
+        (ENGINE_METRICS_URL, "Engine metrics"),
+        (MOCK_CARBON_URL, "Mock carbon API"),
+    ]
+    
+    all_ok = True
+    for url, name in urls_to_check:
+        try:
+            requests.get(url, timeout=2)
+        except Exception:
+            print(f"  ⚠️  {name} not accessible at {url}")
+            all_ok = False
+    
+    return all_ok
+
+
+def ensure_port_forwards() -> None:
+    """
+    Ensure all required port-forwards are running.
+    
+    After resetting pods, port-forwards will break. This function checks
+    and restarts them if needed.
+    """
+    print("  ⏳ Verifying port-forwards...")
+    
+    if check_port_forwards():
+        print("  ✓ All port-forwards are working")
+        return
+    
+    print("  ⚠️  Some port-forwards are down, restarting them...")
+    print("     Please run the following command in a separate terminal:")
+    print()
+    print("     cd /Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments && ./setup_portforwards.sh")
+    print()
+    print("  ⏳ Waiting 15 seconds for port-forwards to be ready...")
+    time.sleep(15)
+    
+    # Check again
+    if check_port_forwards():
+        print("  ✓ Port-forwards are now working")
+    else:
+        print("  ⚠️  Warning: Some port-forwards still not accessible")
+        print("     The test may fail. Please ensure setup_portforwards.sh is running.")
 
 def reset_carbon_pattern() -> None:
     """
@@ -141,12 +196,11 @@ def wait_for_schedule() -> bool:
     Returns True if schedule is ready, False if timeout.
     """
     print("  ⏳ Waiting for decision engine to compute initial schedule...")
-    engine_url = "http://127.0.0.1:18004"
     
     for attempt in range(20):  # 20 attempts = 40 seconds max
         try:
             response = requests.get(
-                f"{engine_url}/schedule/{NAMESPACE}/{SCHEDULE_NAME}",
+                f"{ENGINE_URL}/schedule/{NAMESPACE}/{SCHEDULE_NAME}",
                 timeout=5
             )
             if response.status_code == 200:
@@ -286,11 +340,14 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     # 3. Reset router (clears request counters)
     reset_router()
     
-    # 4. Apply policy with fast update intervals
+    # 4. Ensure port-forwards are working (they break when pods restart)
+    ensure_port_forwards()
+    
+    # 5. Apply policy with fast update intervals
     print("\n⚙️  Configuring policy...")
     patch_policy(policy)
     
-    # 5. Wait for decision engine to compute initial schedule
+    # 6. Wait for decision engine to compute initial schedule
     if not wait_for_schedule():
         print("  ⚠️  Warning: Proceeding without confirmed schedule")
     
