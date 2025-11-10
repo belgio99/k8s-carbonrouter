@@ -104,6 +104,9 @@ SCENARIOS = {
 active_scenario = "fast-test"
 custom_pattern = None
 
+# Override start time for repeatable tests (None = use current time)
+scenario_start_time = None
+
 
 def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[Dict[str, Any]]:
     """
@@ -205,8 +208,18 @@ def get_forecast(start_time: str, region_id: str = None, postcode: str = None):
 @app.route('/intensity')
 def get_current():
     """Return current intensity (first point in forecast)."""
-    now = datetime.now(timezone.utc)
-    # Floor to 30-minute boundary
+    global scenario_start_time
+    
+    # Use override time if set, otherwise use current time
+    if scenario_start_time:
+        now = scenario_start_time
+        # Advance time by the elapsed minutes since the scenario was reset
+        # This allows the pattern to progress naturally
+        now = now + timedelta(minutes=int((datetime.now(timezone.utc) - scenario_start_time).total_seconds() / 60))
+    else:
+        now = datetime.now(timezone.utc)
+    
+    # Floor to step-minute boundary
     step_minutes = max(1, int(STEP_MINUTES))
     minute = (now.minute // step_minutes) * step_minutes
     start = now.replace(minute=minute, second=0, microsecond=0)
@@ -278,6 +291,21 @@ def set_scenario():
     })
 
 
+@app.route('/reset', methods=['POST'])
+def reset_scenario():
+    """Reset scenario to start from the beginning of the pattern."""
+    global scenario_start_time
+    
+    # Set start time to beginning of current minute
+    scenario_start_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    
+    return jsonify({
+        "status": "scenario reset",
+        "start_time": scenario_start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "message": "Pattern will restart from beginning"
+    })
+
+
 @app.route('/health')
 def health():
     """Health check endpoint."""
@@ -295,6 +323,7 @@ def index():
             "/intensity": "Get current intensity",
             "/scenario [GET]": "Get active scenario",
             "/scenario [POST]": "Change scenario (body: {\"scenario\": \"name\"})",
+            "/reset [POST]": "Reset scenario to start from beginning",
             "/health": "Health check"
         },
         "current_scenario": active_scenario if not custom_pattern else "custom",

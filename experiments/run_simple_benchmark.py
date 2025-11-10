@@ -51,18 +51,125 @@ def reset_carbon_pattern() -> None:
     making results comparable across different policies.
     """
     try:
-        # The mock API uses current time to determine position in pattern
-        # We can't reset time, but we can verify the pattern is accessible
-        response = requests.get(f"{MOCK_CARBON_URL}/scenario", timeout=5)
+        response = requests.post(f"{MOCK_CARBON_URL}/reset", timeout=5)
         if response.status_code == 200:
-            scenario_info = response.json()
-            print(f"  ℹ️  Carbon pattern: {scenario_info.get('name', 'unknown')}")
-            print(f"     Pattern length: {len(scenario_info.get('pattern', []))} points")
+            result = response.json()
+            print(f"  ✓ Carbon pattern reset to start")
+            print(f"     Start time: {result.get('start_time', 'unknown')}")
         else:
-            print(f"  ⚠️  Warning: Could not verify carbon API (status {response.status_code})")
+            print(f"  ⚠️  Warning: Could not reset carbon API (status {response.status_code})")
     except Exception as e:
         print(f"  ⚠️  Warning: Carbon API not accessible: {e}")
         print(f"     Tests will continue but results may be inconsistent")
+
+
+def reset_decision_engine() -> None:
+    """
+    Reset decision engine by deleting the pod.
+    
+    Kubernetes will automatically recreate it, giving us a fresh state
+    with zero credit balance and no cached data.
+    """
+    print("  ⏳ Resetting decision engine...")
+    try:
+        # Delete the pod - Kubernetes will recreate it
+        run_cmd([
+            "kubectl", "delete", "pod", "-n", ENGINE_NAMESPACE,
+            "-l", "app.kubernetes.io/name=decision-engine"
+        ])
+        print("  ✓ Decision engine pod deleted")
+        
+        # Wait for new pod to be ready
+        print("  ⏳ Waiting for new decision engine pod to be ready...")
+        for attempt in range(30):  # 30 attempts = 60 seconds max
+            time.sleep(2)
+            result = run_cmd([
+                "kubectl", "get", "pods", "-n", ENGINE_NAMESPACE,
+                "-l", "app.kubernetes.io/name=decision-engine",
+                "-o", "jsonpath={.items[0].status.phase}"
+            ])
+            if result.stdout.strip() == "Running":
+                # Wait a bit more for the service to be fully ready
+                time.sleep(5)
+                print("  ✓ Decision engine is ready")
+                return
+        
+        print("  ⚠️  Warning: Decision engine pod did not become ready in time")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Failed to reset decision engine: {e}")
+
+
+def reset_router() -> None:
+    """
+    Reset router by deleting the pod.
+    
+    This clears any accumulated request counters and ensures the router
+    starts with a clean slate.
+    """
+    print("  ⏳ Resetting router...")
+    try:
+        # Delete the router pod
+        run_cmd([
+            "kubectl", "delete", "pod", "-n", NAMESPACE,
+            "-l", "app.kubernetes.io/component=router"
+        ])
+        print("  ✓ Router pod deleted")
+        
+        # Wait for new pod to be ready
+        print("  ⏳ Waiting for new router pod to be ready...")
+        for attempt in range(30):
+            time.sleep(2)
+            result = run_cmd([
+                "kubectl", "get", "pods", "-n", NAMESPACE,
+                "-l", "app.kubernetes.io/component=router",
+                "-o", "jsonpath={.items[0].status.phase}"
+            ])
+            if result.stdout.strip() == "Running":
+                time.sleep(3)
+                print("  ✓ Router is ready")
+                return
+        
+        print("  ⚠️  Warning: Router pod did not become ready in time")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Failed to reset router: {e}")
+
+
+def wait_for_schedule() -> bool:
+    """
+    Wait for decision engine to have a valid schedule ready.
+    
+    Returns True if schedule is ready, False if timeout.
+    """
+    print("  ⏳ Waiting for decision engine to compute initial schedule...")
+    engine_url = "http://127.0.0.1:18004"
+    
+    for attempt in range(20):  # 20 attempts = 40 seconds max
+        try:
+            response = requests.get(
+                f"{engine_url}/schedule/{NAMESPACE}/{SCHEDULE_NAME}",
+                timeout=5
+            )
+            if response.status_code == 200:
+                schedule = response.json()
+                if schedule.get("flavourWeights"):
+                    weights = schedule["flavourWeights"]
+                    total_weight = sum(weights.values())
+                    print(f"  ✓ Schedule ready: {weights}")
+                    print(f"     Total weight: {total_weight}%")
+                    
+                    # Verify diagnostics are present
+                    if "diagnostics" in schedule:
+                        diag = schedule["diagnostics"]
+                        print(f"     Carbon now: {diag.get('carbon_now', 'N/A')} gCO2/kWh")
+                        print(f"     Credit balance: {diag.get('credit_balance', 'N/A')}")
+                    return True
+        except Exception as e:
+            pass  # Retry
+        
+        time.sleep(2)
+    
+    print("  ⚠️  Warning: Decision engine schedule not ready after 40 seconds")
+    return False
 
 def patch_policy(policy: str) -> None:
     """Update TrafficSchedule with new policy and fast update intervals."""
@@ -165,14 +272,34 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     print(f"Testing policy: {policy}")
     print(f"{'='*70}")
     
-    # 1. Verify carbon pattern (for test consistency)
+    # ═══════════════════════════════════════════════════════════════════
+    # RESET PHASE: Ensure clean, repeatable test environment
+    # ═══════════════════════════════════════════════════════════════════
+    print("\n🔄 Resetting test environment for repeatability...")
+    
+    # 1. Reset carbon API to start from beginning of pattern
     reset_carbon_pattern()
     
-    # 2. Apply policy with fast update intervals
+    # 2. Reset decision engine (clears credit balance and cache)
+    reset_decision_engine()
+    
+    # 3. Reset router (clears request counters)
+    reset_router()
+    
+    # 4. Apply policy with fast update intervals
+    print("\n⚙️  Configuring policy...")
     patch_policy(policy)
     
-    # 3. Get initial state and BASELINE metrics
-    print("  ⏳ Collecting baseline...")
+    # 5. Wait for decision engine to compute initial schedule
+    if not wait_for_schedule():
+        print("  ⚠️  Warning: Proceeding without confirmed schedule")
+    
+    print("\n✓ Test environment ready!")
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # BASELINE COLLECTION: Capture initial state
+    # ═══════════════════════════════════════════════════════════════════
+    print("\n📊 Collecting baseline metrics...")
     schedule_before = get_schedule_status()
     (policy_dir / "schedule_before.json").write_text(
         json.dumps(schedule_before, indent=2), encoding="utf-8"
@@ -207,8 +334,10 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     
     print(f"  ✓ Baseline collected (starting from {sum(baseline_requests.values()):.0f} requests)")
     
-    # 3. Start Locust
-    print(f"  ⏳ Starting load test: {LOCUST_USERS} users for {TEST_DURATION_MINUTES} minutes...")
+    # ═══════════════════════════════════════════════════════════════════
+    # LOAD TEST: Start Locust and begin sampling
+    # ═══════════════════════════════════════════════════════════════════
+    print(f"\n🚀 Starting load test: {LOCUST_USERS} users for {TEST_DURATION_MINUTES} minutes...")
     locust_proc = start_locust_background(policy_dir)
     
     # 4. Sample metrics periodically
