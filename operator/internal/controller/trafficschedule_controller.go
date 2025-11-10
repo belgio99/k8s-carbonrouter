@@ -182,7 +182,20 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		prevHash = existing.Annotations[configHashAnnotation]
 	}
 	configHash := fmt.Sprintf("%x", sha256.Sum256(payloadBytes))
-	if prevHash != configHash {
+	
+	// Check if schedule exists in decision engine
+	checkURL := fmt.Sprintf("%s/schedule/%s/%s", engineBaseURL, req.Namespace, req.Name)
+	checkResp, err := httpClient.Get(checkURL)
+	scheduleExists := err == nil && checkResp.StatusCode == http.StatusOK
+	if checkResp != nil {
+		checkResp.Body.Close()
+	}
+	
+	// Push config if hash changed OR schedule doesn't exist
+	if prevHash != configHash || !scheduleExists {
+		if !scheduleExists {
+			log.Info("Schedule not found in decision engine, pushing configuration")
+		}
 		if err := pushSchedulerConfig(req.Namespace, req.Name, payload); err != nil {
 			log.Error(err, "Failed to push scheduler configuration")
 			return ctrl.Result{}, err
