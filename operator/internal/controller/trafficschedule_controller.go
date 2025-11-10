@@ -33,9 +33,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	schedulingv1alpha1 "github.com/belgio99/k8s-carbonrouter/operator/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -329,18 +326,10 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TrafficScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// filter: only reconcile on create or spec update
-	p := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool { return true },
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldTS := e.ObjectOld.(*schedulingv1alpha1.TrafficSchedule)
-			newTS := e.ObjectNew.(*schedulingv1alpha1.TrafficSchedule)
-			return !reflect.DeepEqual(oldTS.Spec, newTS.Spec)
-		},
-	}
-
+	// Allow periodic reconciliation by not filtering status updates
+	// This ensures the controller re-reconciles when schedules expire
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&schedulingv1alpha1.TrafficSchedule{}, builder.WithPredicates(p)).
+		For(&schedulingv1alpha1.TrafficSchedule{}).
 		Complete(r)
 }
 
