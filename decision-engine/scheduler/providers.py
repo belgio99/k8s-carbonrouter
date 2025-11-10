@@ -73,7 +73,7 @@ class CarbonForecastProvider:
             if self._cached_schedule and (time.time() - self._cached_schedule[0] < self.cache_ttl):
                 return self._cached_schedule[1]
 
-        start = self._floor_half_hour(datetime.now(timezone.utc))
+        start = self._floor_minute(datetime.now(timezone.utc))
         url = f"{self.base_url}{self._build_schedule_path(start)}"
 
         if requests is None:
@@ -170,10 +170,9 @@ class CarbonForecastProvider:
         return "national", None
 
     @staticmethod
-    def _floor_half_hour(moment: datetime) -> datetime:
+    def _floor_minute(moment: datetime) -> datetime:
         rounded = moment.astimezone(timezone.utc)
-        minute = 0 if rounded.minute < 30 else 30
-        return rounded.replace(minute=minute, second=0, microsecond=0)
+        return rounded.replace(second=0, microsecond=0)
 
     @staticmethod
     def _parse_time(value: Any) -> Optional[datetime]:

@@ -75,7 +75,7 @@ def ensure_port_forwards() -> None:
     Ensure all required port-forwards are running.
     
     After resetting pods, port-forwards will break. This function checks
-    and restarts them if needed.
+    and restarts them if needed using the robust setup script.
     """
     print("  ⏳ Verifying port-forwards...")
     
@@ -84,19 +84,29 @@ def ensure_port_forwards() -> None:
         return
     
     print("  ⚠️  Some port-forwards are down, restarting them...")
-    print("     Please run the following command in a separate terminal:")
-    print()
-    print("     cd /Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments && ./setup_portforwards.sh")
-    print()
-    print("  ⏳ Waiting 15 seconds for port-forwards to be ready...")
-    time.sleep(15)
     
-    # Check again
-    if check_port_forwards():
-        print("  ✓ Port-forwards are now working")
-    else:
-        print("  ⚠️  Warning: Some port-forwards still not accessible")
-        print("     The test may fail. Please ensure setup_portforwards.sh is running.")
+    # Run the robust setup script
+    script_path = "/Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments/setup_portforwards_robust.sh"
+    
+    try:
+        result = subprocess.run(
+            ["bash", script_path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False
+        )
+        
+        if result.returncode == 0:
+            print("  ✓ Port-forwards restarted successfully")
+        else:
+            print(f"  ⚠️  Port-forward script failed: {result.stderr}")
+            print("     The test may fail. Check /tmp/k8s-portforward-logs/ for details.")
+    except subprocess.TimeoutExpired:
+        print("  ⚠️  Port-forward setup timed out")
+    except OSError as e:
+        print(f"  ⚠️  Error restarting port-forwards: {e}")
+
 
 def reset_carbon_pattern() -> None:
     """
@@ -335,10 +345,12 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     reset_carbon_pattern()
     
     # 2. Reset decision engine (clears credit balance and cache)
-    reset_decision_engine()
+    # TEMPORARILY DISABLED - port-forwards not stable enough after pod resets
+    # reset_decision_engine()
     
     # 3. Reset router (clears request counters)
-    reset_router()
+    # TEMPORARILY DISABLED - port-forwards not stable enough after pod resets
+    # reset_router()
     
     # 4. Ensure port-forwards are working (they break when pods restart)
     ensure_port_forwards()
