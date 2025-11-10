@@ -11,6 +11,8 @@ four scheduling policies supported by the decision engine:
 The goal is to run each policy under the same workload, with an identical
 carbon-intensity scenario, and collect metrics for thesis analysis (graphs, tables, raw CSV/JSON data).
 
+> **📋 New to carbon scenarios?** See [CARBON_SETUP_SUMMARY.md](CARBON_SETUP_SUMMARY.md) for a quick guide on using `carbon_scenario.json` with the mock Carbon API.
+
 ---
 
 ## Prerequisites

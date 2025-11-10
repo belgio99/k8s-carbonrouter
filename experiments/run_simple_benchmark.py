@@ -220,7 +220,8 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
             "timestamp", "elapsed_seconds", "delta_requests", "mean_precision",
             "credit_balance", "credit_velocity", "engine_avg_precision",
             "carbon_now", "carbon_next",
-            "requests_precision_30", "requests_precision_50", "requests_precision_100"
+            "requests_precision_30", "requests_precision_50", "requests_precision_100",
+            "commanded_weight_30", "commanded_weight_50", "commanded_weight_100"
         ])
         csvfile.flush()
         
@@ -236,6 +237,24 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                 # Get current metrics
                 router_metrics = parse_prometheus_metrics(scrape_metrics(ROUTER_METRICS_URL))
                 engine_metrics = parse_prometheus_metrics(scrape_metrics(ENGINE_METRICS_URL))
+                
+                # Get current schedule from decision engine to see commanded weights
+                try:
+                    schedule_response = requests.get(
+                        f"http://127.0.0.1:18004/schedule/{NAMESPACE}/{SCHEDULE_NAME}",
+                        timeout=2
+                    )
+                    commanded_weights = {}
+                    if schedule_response.status_code == 200:
+                        schedule_data = schedule_response.json()
+                        flavours = schedule_data.get("flavours", [])
+                        for flav in flavours:
+                            prec = flav.get("precision")
+                            weight = flav.get("weight", 0)
+                            if prec is not None:
+                                commanded_weights[f"precision-{int(prec)}"] = weight
+                except Exception:
+                    commanded_weights = {}
                 
                 current_requests = extract_router_requests_by_flavour(router_metrics)
                 
@@ -281,7 +300,10 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                     f"{engine_data.get('carbon_next', ''):.1f}" if 'carbon_next' in engine_data else "",
                     int(delta_requests.get("precision-30", 0)),
                     int(delta_requests.get("precision-50", 0)),
-                    int(delta_requests.get("precision-100", 0))
+                    int(delta_requests.get("precision-100", 0)),
+                    commanded_weights.get("precision-30", ""),
+                    commanded_weights.get("precision-50", ""),
+                    commanded_weights.get("precision-100", "")
                 ])
                 csvfile.flush()
                 

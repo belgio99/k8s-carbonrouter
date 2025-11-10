@@ -23,6 +23,10 @@ sleep 1
 
 echo "  → Decision engine metrics (8001 -> 18003)..."
 kubectl port-forward -n carbonrouter-system svc/carbonrouter-decision-engine 18003:8001 > /tmp/pf-engine-metrics.log 2>&1 &
+sleep 1
+
+echo "  → Decision engine API (80 -> 18004)..."
+kubectl port-forward -n carbonrouter-system svc/carbonrouter-decision-engine 18004:80 > /tmp/pf-engine-api.log 2>&1 &
 sleep 2
 
 # Verify all are working
@@ -55,6 +59,13 @@ if curl -s http://127.0.0.1:18003/metrics | head -1 > /dev/null 2>&1; then
   echo "  ✓ Decision engine metrics (18003)"
 else
   echo "  ✗ Decision engine metrics (18003) FAILED"
+  failed=1
+fi
+
+if curl -s http://127.0.0.1:18004/ > /dev/null 2>&1; then
+  echo "  ✓ Decision engine API (18004)"
+else
+  echo "  ✗ Decision engine API (18004) FAILED"
   failed=1
 fi
 

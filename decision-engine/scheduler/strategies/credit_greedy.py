@@ -29,9 +29,22 @@ class CreditGreedyPolicy(SchedulerPolicy):
         baseline = flavours_list[0]
 
         # Portion of traffic we can spend on non-baseline flavours
-        allowance = 0.0
+        # Adjust based on current carbon intensity if forecast available
+        base_allowance = 0.0
         if self.ledger.credit_max > 0:
-            allowance = max(0.0, min(1.0, self.ledger.balance / self.ledger.credit_max))
+            base_allowance = max(0.0, min(1.0, self.ledger.balance / self.ledger.credit_max))
+        
+        # Carbon-aware adjustment: when carbon is high, spend credits more aggressively
+        carbon_multiplier = 1.0
+        if forecast and forecast.intensity_now is not None:
+            # Use a baseline carbon intensity (e.g., 150 gCO2/kWh as middle point)
+            baseline_carbon = 150.0
+            carbon_ratio = forecast.intensity_now / baseline_carbon
+            # If carbon is high (>150), increase allowance to use more low-precision (low-carbon) flavours
+            # If carbon is low (<150), decrease allowance to preserve high precision when carbon is cheap
+            carbon_multiplier = max(0.5, min(2.0, carbon_ratio))
+        
+        allowance = min(1.0, base_allowance * carbon_multiplier)
 
         weights: Dict[str, float] = {baseline.name: max(0.0, 1.0 - allowance)}
         greener = flavours_list[1:]
@@ -50,8 +63,11 @@ class CreditGreedyPolicy(SchedulerPolicy):
         diagnostics = PolicyDiagnostics(
             {
                 "credit_balance": self.ledger.balance,
+                "base_allowance": base_allowance,
+                "carbon_multiplier": carbon_multiplier,
                 "allowance": allowance,
                 "avg_precision": avg_precision,
+                "carbon_now": forecast.intensity_now if forecast else None,
             }
         )
         return PolicyResult(weights, avg_precision, diagnostics)

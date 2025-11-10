@@ -120,8 +120,8 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
     
     # Get the pattern for the active scenario
     if custom_pattern:
-        pattern = custom_pattern
-        repeat = False
+        pattern = custom_pattern["pattern"]
+        repeat = custom_pattern.get("repeat", True)
     else:
         scenario = SCENARIOS.get(active_scenario, SCENARIOS["rising"])
         pattern = scenario["pattern"]
@@ -223,7 +223,8 @@ def get_scenario():
     if custom_pattern:
         return jsonify({
             "scenario": "custom",
-            "pattern": custom_pattern
+            "pattern": custom_pattern["pattern"],
+            "repeat": custom_pattern["repeat"]
         })
     
     scenario = SCENARIOS.get(active_scenario, SCENARIOS["rising"])
@@ -248,11 +249,15 @@ def set_scenario():
         pattern = data.get("pattern")
         if not pattern or not isinstance(pattern, list):
             return jsonify({"error": "Custom scenario requires 'pattern' array"}), 400
-        custom_pattern = pattern
+        custom_pattern = {
+            "pattern": pattern,
+            "repeat": data.get("repeat", True)  # Default to repeating
+        }
         return jsonify({
             "status": "scenario updated",
             "scenario": "custom",
-            "pattern": custom_pattern
+            "pattern": custom_pattern["pattern"],
+            "repeat": custom_pattern["repeat"]
         })
     
     if new_scenario not in SCENARIOS:
@@ -297,15 +302,22 @@ def index():
     })
 
 
-def load_custom_scenario(filepath: str) -> List[int]:
+def load_custom_scenario(filepath: str) -> dict:
     """Load custom scenario from JSON file."""
     with open(filepath, 'r') as f:
         data = json.load(f)
     
     if isinstance(data, list):
-        return data
+        # Convert simple array to full scenario format
+        return {
+            "pattern": data,
+            "repeat": True  # Default to repeating for custom scenarios
+        }
     elif isinstance(data, dict) and "pattern" in data:
-        return data["pattern"]
+        # Full scenario format - ensure repeat defaults to True
+        if "repeat" not in data:
+            data["repeat"] = True
+        return data
     else:
         raise ValueError("JSON must be array of numbers or object with 'pattern' key")
 
@@ -374,7 +386,8 @@ Examples:
             parser.error("--file required when using --scenario custom")
         custom_pattern = load_custom_scenario(args.file)
         print(f"Loaded custom scenario from {args.file}")
-        print(f"Pattern: {custom_pattern}")
+        print(f"Pattern: {custom_pattern['pattern']}")
+        print(f"Repeat: {custom_pattern['repeat']}")
     else:
         active_scenario = args.scenario
         scenario = SCENARIOS[active_scenario]

@@ -174,3 +174,7 @@ cython_debug/
 
 *.tex
 *.bib
+
+.github/copilot-instructions.md
+
+experiments/results
