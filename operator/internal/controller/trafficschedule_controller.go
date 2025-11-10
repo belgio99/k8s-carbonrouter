@@ -182,19 +182,22 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		prevHash = existing.Annotations[configHashAnnotation]
 	}
 	configHash := fmt.Sprintf("%x", sha256.Sum256(payloadBytes))
-	
+
 	// Check if schedule exists in decision engine
 	checkURL := fmt.Sprintf("%s/schedule/%s/%s", engineBaseURL, req.Namespace, req.Name)
 	checkResp, err := httpClient.Get(checkURL)
 	scheduleExists := err == nil && checkResp.StatusCode == http.StatusOK
+	checkStatusCode := 0
 	if checkResp != nil {
+		checkStatusCode = checkResp.StatusCode
 		checkResp.Body.Close()
 	}
-	
+	log.Info("Schedule existence check", "statusCode", checkStatusCode, "scheduleExists", scheduleExists, "prevHash", prevHash, "configHash", configHash)
+
 	// Push config if hash changed OR schedule doesn't exist
 	if prevHash != configHash || !scheduleExists {
 		if !scheduleExists {
-			log.Info("Schedule not found in decision engine, pushing configuration")
+			log.Info("Schedule not found in decision engine, pushing configuration", "checkStatusCode", checkStatusCode)
 		}
 		if err := pushSchedulerConfig(req.Namespace, req.Name, payload); err != nil {
 			log.Error(err, "Failed to push scheduler configuration")
@@ -229,6 +232,23 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusNoContent {
 		log.Info("Decision engine reports schedule pending", "statusCode", resp.StatusCode)
+		return ctrl.Result{RequeueAfter: schedulePendingInterval}, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		// Schedule not found in decision engine - push config and retry
+		log.Info("Schedule not found in decision engine (404), pushing configuration and retrying")
+		if err := pushSchedulerConfig(req.Namespace, req.Name, payload); err != nil {
+			log.Error(err, "Failed to push scheduler configuration after 404")
+			return ctrl.Result{}, err
+		}
+		// Clear the config hash annotation to ensure it gets updated on next reconcile
+		if existing.Annotations != nil {
+			delete(existing.Annotations, configHashAnnotation)
+			if err := r.Update(ctx, &existing); err != nil {
+				log.Error(err, "Failed to clear config hash annotation")
+				return ctrl.Result{}, err
+			}
+		}
 		return ctrl.Result{RequeueAfter: schedulePendingInterval}, nil
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
