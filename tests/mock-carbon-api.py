@@ -147,18 +147,19 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
     now = datetime.now(timezone.utc)
     
     # Calculate which index in the pattern we should start from
-    # This is based on elapsed time since scenario_start_time (if set)
+    # The pattern offset is based on time elapsed from scenario_start_time
     pattern_length = len(pattern)
     step_minutes = max(1, int(STEP_MINUTES))
     
-    if scenario_start_time:
-        # Calculate elapsed time since scenario started
-        elapsed_minutes = (now - scenario_start_time).total_seconds() / 60
-        # Calculate which step in the pattern we're at
-        pattern_offset = int(elapsed_minutes / step_minutes)
-    else:
-        # No offset - pattern starts from current minute aligned to step boundary
-        pattern_offset = 0
+    if scenario_start_time is None:
+        # Auto-initialize on first request: set scenario start to current time
+        # This anchors the pattern to a specific point
+        scenario_start_time = now.replace(second=0, microsecond=0)
+    
+    # Calculate elapsed time from scenario start to the requested start_time
+    elapsed_minutes = (start_time - scenario_start_time).total_seconds() / 60
+    # Calculate which step in the pattern we're at
+    pattern_offset = int(elapsed_minutes / step_minutes)
     
     # Generate forecast entries
     for i in range(num_periods):
