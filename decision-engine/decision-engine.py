@@ -36,6 +36,10 @@ DEFAULT_NAME = os.getenv("DEFAULT_SCHEDULE_NAME", "default")
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://kube-prometheus-stack-prometheus.carbonrouter-system.svc.cluster.local:9090")
 METRICS_POLL_INTERVAL_SEC = int(os.getenv("METRICS_POLL_INTERVAL_SEC", "15"))
 
+# Schedule evaluation interval (how often to recompute the schedule)
+# This is separate from validFor (how long clients can cache the schedule)
+SCHEDULE_EVAL_INTERVAL_SEC = int(os.getenv("SCHEDULE_EVAL_INTERVAL_SEC", "15"))
+
 # Configuration keys that can be overridden via API
 SCHEDULER_CONFIG_KEYS = {
     "targetError",      # Target quality error threshold
@@ -580,8 +584,17 @@ class SchedulerSession:
 
             # Evaluate schedule
             try:
+                LOGGER.debug("Evaluating schedule for %s/%s", self.namespace, self.name)
                 decision = engine.evaluate()
                 schedule = decision.as_dict()
+                LOGGER.info(
+                    "Schedule updated for %s/%s: carbon_now=%.1f, avg_precision=%.3f, validUntil=%s",
+                    self.namespace,
+                    self.name,
+                    decision.diagnostics.get("carbon_now", 0),
+                    decision.avg_precision,
+                    decision.valid_until.strftime("%H:%M:%S"),
+                )
             except Exception as exc:  # noqa: BLE001
                 LOGGER.exception(
                     "Scheduler iteration failed for %s/%s: %s",
@@ -621,8 +634,15 @@ class SchedulerSession:
                 # The query uses increase() over METRICS_POLL_INTERVAL_SEC window
                 flavour_counts = query_router_metrics(self.namespace)
                 
-                if not flavour_counts:
-                    # No metrics available yet - skip this iteration
+                if not flavour_counts or sum(flavour_counts.values()) == 0:
+                    # No metrics available or no traffic - still trigger refresh
+                    # to pick up carbon intensity changes
+                    LOGGER.debug(
+                        "No traffic metrics for %s/%s, triggering refresh anyway for carbon updates",
+                        self.namespace,
+                        self.name,
+                    )
+                    self._refresh_event.set()
                     continue
                 
                 # flavour_counts already contains the increase (delta) from Prometheus
@@ -646,15 +666,15 @@ class SchedulerSession:
         """
         Calculate how long to wait before next schedule refresh.
         
-        Uses 80% of the validity period to ensure schedule is refreshed
-        before it expires.
+        Uses the configured evaluation interval (SCHEDULE_EVAL_INTERVAL_SEC),
+        which defaults to 15 seconds. This ensures the schedule is refreshed
+        frequently to respond quickly to carbon intensity changes, regardless
+        of the validity period (validFor) which controls client-side caching.
         
         Returns:
             Wait time in seconds
         """
-        with self._lock:
-            interval = max(1, int(self._engine.config.valid_for * 0.8))
-        return interval
+        return SCHEDULE_EVAL_INTERVAL_SEC
 
     def shutdown(self) -> None:
         """Gracefully shutdown the scheduler session and background thread."""

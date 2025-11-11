@@ -175,7 +175,8 @@ class SchedulerConfig:
             discovery_interval=int(os.getenv("STRATEGY_DISCOVERY_INTERVAL", "60")),
             carbon_target=os.getenv("CARBON_API_TARGET", "national"),
             carbon_timeout=float(os.getenv("CARBON_API_TIMEOUT", "2.0")),
-            carbon_cache_ttl=float(os.getenv("CARBON_API_CACHE_TTL", "300.0")),
+            # Default cache TTL reduced to 10 seconds for faster response to carbon changes
+            carbon_cache_ttl=float(os.getenv("CARBON_API_CACHE_TTL", "10.0")),
         )
 
     def clone(self) -> "SchedulerConfig":

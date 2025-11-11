@@ -28,7 +28,7 @@ ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 
 # Test configuration
 TEST_DURATION_MINUTES = 10
-SAMPLE_INTERVAL_SECONDS = 15
+SAMPLE_INTERVAL_SECONDS = 5
 LOCUST_USERS = 150
 LOCUST_SPAWN_RATE = 50
 
@@ -238,14 +238,14 @@ def wait_for_schedule() -> bool:
 def patch_policy(policy: str) -> None:
     """Update TrafficSchedule with new policy and fast update intervals."""
     # Configure for fast testing:
-    # - validFor: 30s = decision engine recalculates every ~24s (80% of 30s)
+    # - validFor: 10s = decision engine recalculates every ~8s (80% of 10s)
     # - carbonCacheTTL: 15s = fetch fresh carbon data every 15s  
     # This ensures we catch carbon changes every minute without overwhelming the system
     patch = json.dumps({
         "spec": {
             "scheduler": {
                 "policy": policy,
-                "validFor": 30,        # Schedule refresh every ~24s
+                "validFor": 10,        # Schedule refresh every ~24s
                 "carbonCacheTTL": 15   # Carbon data refreshed every 15s
             }
         }
@@ -254,7 +254,7 @@ def patch_policy(policy: str) -> None:
         "kubectl", "patch", "trafficschedule", SCHEDULE_NAME,
         "-n", NAMESPACE, "--type=merge", f"-p={patch}"
     ])
-    print(f"  ✓ Patched policy to {policy} (validFor=30s, carbonCacheTTL=15s)")
+    print(f"  ✓ Patched policy to {policy} (validFor=10s, carbonCacheTTL=15s)")
     print("  ⏳ Waiting 30s for decision engine to stabilize...")
     time.sleep(30)
 
