@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from flask import Flask, jsonify, request
 from prometheus_client import start_http_server
+import requests
 
 from scheduler import SchedulerEngine
 from scheduler.models import SchedulerConfig, FlavourProfile, precision_key
@@ -30,6 +31,10 @@ LOGGER = logging.getLogger("decision-engine")
 # Default namespace and name for TrafficSchedule resources
 DEFAULT_NAMESPACE = os.getenv("DEFAULT_SCHEDULE_NAMESPACE", "default")
 DEFAULT_NAME = os.getenv("DEFAULT_SCHEDULE_NAME", "default")
+
+# Prometheus configuration for pulling router metrics
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://kube-prometheus-stack-prometheus.carbonrouter-system.svc.cluster.local:9090")
+METRICS_POLL_INTERVAL_SEC = int(os.getenv("METRICS_POLL_INTERVAL_SEC", "15"))
 
 # Configuration keys that can be overridden via API
 SCHEDULER_CONFIG_KEYS = {
@@ -197,6 +202,98 @@ def _as_int(value: Any) -> Optional[int]:
         return None
 
 
+# ============================================================================
+# Prometheus Query Functions
+# ============================================================================
+
+def query_router_metrics(namespace: str) -> Dict[str, int]:
+    """
+    Query Prometheus for router metrics (per-flavour request deltas).
+    
+    This function queries the router_http_requests_total Counter metric
+    and calculates the increase over the polling interval using Prometheus's
+    increase() function. This is more idiomatic than having the router 
+    calculate deltas manually.
+    
+    Args:
+        namespace: Kubernetes namespace to query router metrics from
+        
+    Returns:
+        Dictionary mapping flavour names to request counts (increase over last 15s, summed across all routers)
+        Example: {"precision-30": 1200, "precision-50": 800, "precision-100": 15000}
+    """
+    try:
+        # Query Prometheus for increase in router_http_requests_total over the polling interval
+        # Filter for successful requests (status="200") and queue type
+        # Sum across all router instances and group by flavour
+        # Note: We filter by the kubernetes namespace label that Prometheus adds automatically
+        time_window = f"{METRICS_POLL_INTERVAL_SEC}s"
+        query = (
+            f'sum by (flavour) ('
+            f'increase(router_http_requests_total{{'
+            f'namespace="{namespace}",'
+            f'status="200",'
+            f'qtype="queue"'
+            f'}}[{time_window}])'
+            f')'
+        )
+        
+        response = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": query},
+            timeout=5.0
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("status") != "success":
+            error_msg = data.get("error", "unknown error")
+            LOGGER.warning("Prometheus query failed: %s", error_msg)
+            # If the namespace label doesn't exist, try without it (for single-namespace deployments)
+            if "unknown series" in str(error_msg).lower() or "not found" in str(error_msg).lower():
+                LOGGER.info("Retrying query without namespace filter...")
+                query_fallback = (
+                    f'sum by (flavour) ('
+                    f'increase(router_http_requests_total{{'
+                    f'status="200",'
+                    f'qtype="queue"'
+                    f'}}[{time_window}])'
+                    f')'
+                )
+                response = requests.get(
+                    f"{PROMETHEUS_URL}/api/v1/query",
+                    params={"query": query_fallback},
+                    timeout=5.0
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get("status") != "success":
+                    LOGGER.warning("Prometheus fallback query also failed: %s", data.get("error", "unknown"))
+                    return {}
+        
+        # Parse results
+        results = data.get("data", {}).get("result", [])
+        flavour_counts: Dict[str, int] = {}
+        
+        for result in results:
+            metric_labels = result.get("metric", {})
+            flavour = metric_labels.get("flavour")
+            value = result.get("value", [None, 0])[1]  # [timestamp, value]
+            
+            if flavour and value:
+                # Round to nearest integer since increase() returns float
+                count = int(round(float(value)))
+                if count > 0:
+                    flavour_counts[flavour] = count
+        
+        return flavour_counts
+    
+    except Exception as e:
+        LOGGER.error("Failed to query Prometheus for router metrics: %s", e)
+        return {}
+
+
 class ScheduleNotReady(RuntimeError):
     """
     Exception raised when a schedule has not been computed yet.
@@ -305,6 +402,14 @@ class SchedulerSession:
         )
         self._thread.start()
         self._refresh_event.set()  # Trigger initial evaluation
+        
+        # Start metrics polling thread (queries Prometheus every 15 seconds)
+        self._metrics_thread = threading.Thread(
+            target=self._metrics_poll_loop,
+            name=f"metrics-poll[{namespace}/{name}]",
+            daemon=True,
+        )
+        self._metrics_thread.start()
 
     def apply_overrides(self, payload: Dict[str, Any]) -> None:
         """
@@ -492,6 +597,50 @@ class SchedulerSession:
                 self._schedule = schedule
                 self._manual_schedule = None
                 self._manual_expiry = 0.0
+
+    def _metrics_poll_loop(self) -> None:
+        """
+        Metrics polling loop - runs in background thread.
+        
+        Queries Prometheus every METRICS_POLL_INTERVAL_SEC seconds to fetch
+        router metrics (per-flavour request increases). Uses Prometheus's
+        increase() function to calculate deltas over the polling interval.
+        
+        This decouples the router from the decision engine - routers expose
+        standard Counter metrics, and the decision engine queries Prometheus
+        independently using flexible time windows.
+        """
+        while not self._stop_event.is_set():
+            try:
+                time.sleep(METRICS_POLL_INTERVAL_SEC)
+                
+                if self._stop_event.is_set():
+                    break
+                
+                # Query Prometheus for request increases in this namespace
+                # The query uses increase() over METRICS_POLL_INTERVAL_SEC window
+                flavour_counts = query_router_metrics(self.namespace)
+                
+                if not flavour_counts:
+                    # No metrics available yet - skip this iteration
+                    continue
+                
+                # flavour_counts already contains the increase (delta) from Prometheus
+                total_requests = sum(flavour_counts.values())
+                
+                if total_requests > 0:
+                    self.process_feedback(flavour_counts, total_requests)
+                    LOGGER.debug(
+                        "Polled metrics for %s/%s: %d requests across %d flavours",
+                        self.namespace,
+                        self.name,
+                        total_requests,
+                        len(flavour_counts),
+                    )
+            
+            except Exception as e:
+                LOGGER.error("Error in metrics polling loop for %s/%s: %s", self.namespace, self.name, e)
+                time.sleep(5)  # Backoff on error
 
     def _next_wait(self) -> float:
         """
@@ -777,7 +926,11 @@ def configure_schedule(namespace: str, name: str) -> Any:
 @app.route("/feedback/<namespace>/<name>", methods=["POST"])
 def receive_feedback(namespace: str, name: str) -> Any:
     """
-    Receive feedback about actual request distribution from the router.
+    [DEPRECATED] Receive feedback about actual request distribution from the router.
+    
+    This endpoint is now deprecated. The decision engine polls Prometheus directly
+    every 15 seconds to fetch router metrics, decoupling routers from the engine.
+    This endpoint is kept for backwards compatibility and manual testing only.
     
     The router reports the actual number of requests sent to each flavour
     during a sampling window. This enables the decision engine to:
@@ -805,6 +958,12 @@ def receive_feedback(namespace: str, name: str) -> Any:
         400: Invalid payload
         404: Schedule not found
     """
+    LOGGER.warning(
+        "DEPRECATED: /feedback endpoint called for %s/%s - this endpoint is deprecated, "
+        "decision engine now polls Prometheus directly",
+        namespace,
+        name,
+    )
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return jsonify({"error": "payload must be an object"}), 400

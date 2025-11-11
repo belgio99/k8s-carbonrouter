@@ -25,6 +25,7 @@ env:
   RABBITMQ_PORT: "5672"
   RABBITMQ_USER: "carbonuser"
   RABBITMQ_PASS: "supersecret"
+  FEEDBACK_INTERVAL_SEC: "5"
   # EXAMPLE_VAR: "example_value"
 
 # This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
