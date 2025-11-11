@@ -95,43 +95,43 @@ async def _init_rabbit() -> None:
     Opens connection/channel, declares headers-exchange and the single reply
     queue (idempotente: viene chiamato la prima volta che serve un canale).
     """
-    if rabbit_state["channel"] and not rabbit_state["channel"].is_closed:
-        return  # già inizializzato
-    
     async with init_lock:
+        if rabbit_state["channel"] and not rabbit_state["channel"].is_closed:
+            return  # già inizializzato
+        
         if rabbit_state.get("exchange"):
             return
 
-    # Connessione e channel robust
-    rabbit_state["connection"] = await aio_pika.connect_robust(RABBITMQ_URL)
-    rabbit_state["channel"] = await rabbit_state["connection"].channel()
+        # Connessione e channel robust
+        rabbit_state["connection"] = await aio_pika.connect_robust(RABBITMQ_URL)
+        rabbit_state["channel"] = await rabbit_state["connection"].channel()
 
-    # Headers-exchange per la pubblicazione
-    rabbit_state["exchange"] = await rabbit_state["channel"].declare_exchange(
-        f"{TARGET_SVC_NAMESPACE}.{TARGET_SVC_NAME}",
-        ExchangeType.HEADERS,
-        durable=True,
-    )
-
-
-    # Consumer fisso che demultiplexa via correlation_id
-    async def _on_reply(msg: aio_pika.IncomingMessage) -> None:
-        future: asyncio.Future | None = rabbit_state["pending"].pop(
-            msg.correlation_id, None
+        # Headers-exchange per la pubblicazione
+        rabbit_state["exchange"] = await rabbit_state["channel"].declare_exchange(
+            f"{TARGET_SVC_NAMESPACE}.{TARGET_SVC_NAME}",
+            ExchangeType.HEADERS,
+            durable=True,
         )
-        if future and not future.done():
-            future.set_result(msg)
 
-    reply_queue = Queue(
-        rabbit_state["channel"],
-        name="amq.rabbitmq.reply-to",
-        passive=True,
-        durable=False,
-        exclusive=False,
-        auto_delete=False,
-        arguments=None,
-    )
-    await reply_queue.consume(_on_reply, no_ack=True)
+
+        # Consumer fisso che demultiplexa via correlation_id
+        async def _on_reply(msg: aio_pika.IncomingMessage) -> None:
+            future: asyncio.Future | None = rabbit_state["pending"].pop(
+                msg.correlation_id, None
+            )
+            if future and not future.done():
+                future.set_result(msg)
+
+        reply_queue = Queue(
+            rabbit_state["channel"],
+            name="amq.rabbitmq.reply-to",
+            passive=True,
+            durable=False,
+            exclusive=False,
+            auto_delete=False,
+            arguments=None,
+        )
+        await reply_queue.consume(_on_reply, no_ack=True)
 
 
 async def get_rabbit_channel() -> aio_pika.Channel:
