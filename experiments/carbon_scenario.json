@@ -1,15 +1,8 @@
 {
   "scenario": "custom",
-  "description": "10 minute test pattern with initial peak, long low dip, and rapid final rise (15-second steps, 40 points)",
+  "description": "5 minute test pattern with gradual decline then rapid rise (1-minute steps, 5 points)",
   "repeat": true,
   "pattern": [
-    150, 170, 190, 210, 220,
-    210, 190, 170, 150, 120,
-    90, 60, 40, 30, 20,
-    10, 10, 30, 10, 20,
-    10, 10, 10, 20, 10,
-    10, 20, 10, 10, 10,
-    10, 10, 10, 20, 40,
-    80, 130, 190, 250, 300
+    150, 100, 50, 100, 200
   ]
 }
