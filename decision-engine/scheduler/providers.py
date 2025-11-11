@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -15,6 +16,8 @@ except ImportError:  # pragma: no cover - requests is an optional runtime depend
     requests = None  # type: ignore[assignment]
 
 from .models import ForecastPoint, ForecastSnapshot
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class CarbonForecastProvider:
