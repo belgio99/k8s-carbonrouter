@@ -25,11 +25,15 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
+import logging
 from flask import Flask, jsonify, request
 
 STEP_MINUTES = 1
 
 app = Flask(__name__)
+
+# Configure a logger for the module; actual level is set in main() based on --debug
+logger = logging.getLogger("mock-carbon-api")
 
 # Predefined test scenarios (gCO2/kWh)
 SCENARIOS = {
@@ -110,25 +114,37 @@ scenario_start_time = None
 
 def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[Dict[str, Any]]:
     """
-    Generate forecast data for the specified number of forecast periods.
+    Generate mock forecast data in the format expected by the Carbon Intensity API.
+    
+    For each time period, returns:
+    - from/to: Time window boundaries
+    - intensity.forecast: Predicted intensity for this period (always present)
+    - intensity.actual: Measured actual intensity (only for periods up to now, null for future)
+    - intensity.index: Categorical intensity level
+    
+    The semantic difference:
+    - For past/present periods: actual = what was measured, forecast = what was predicted
+    - For future periods: forecast = what we predict, actual = null (unknown future)
     
     Args:
-        start_time: Starting timestamp for the forecast
-        num_periods: Number of periods to generate (default: 96)
-        
-    Returns:
-        List of forecast entries in Carbon Intensity API format
+        start_time: Start of forecast window (typically "now")
+        num_periods: Number of periods to generate (default 96 = 48 hours at 30-min intervals)
     """
-    data = []
+    global active_scenario, custom_pattern
     
-    # Get the pattern for the active scenario
-    if custom_pattern:
+    data: List[Dict[str, Any]] = []
+    
+    # Determine which pattern to use
+    if active_scenario == "custom" and custom_pattern:
         pattern = custom_pattern["pattern"]
         repeat = custom_pattern.get("repeat", True)
     else:
         scenario = SCENARIOS.get(active_scenario, SCENARIOS["rising"])
         pattern = scenario["pattern"]
         repeat = scenario.get("repeat", True)
+    
+    # Get current time to determine which periods are past vs future
+    now = datetime.now(timezone.utc)
     
     # Generate forecast entries
     pattern_length = len(pattern)
@@ -141,9 +157,9 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
             intensity = pattern[i] if i < pattern_length else pattern[-1]
         
         # Add some small random variation for realism (±5%)
-        import random
-        variation = random.uniform(0.95, 1.05)
-        intensity = int(intensity * variation)
+        # import random
+        # variation = random.uniform(0.95, 1.05)
+        # intensity = int(intensity * variation)
         
         # Calculate time window
         start = start_time + timedelta(minutes=step_minutes * i)
@@ -161,14 +177,22 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
         else:
             index = "very high"
         
+        # For semantic consistency with real APIs:
+        # - Include "actual" only for periods that have ended (end time <= now)
+        # - Use "forecast" for all periods
+        intensity_obj: Dict[str, Any] = {
+            "forecast": intensity,
+            "index": index
+        }
+        
+        # Only include actual if this period has ended
+        if end <= now:
+            intensity_obj["actual"] = intensity
+        
         data.append({
             "from": start.strftime("%Y-%m-%dT%H:%MZ"),
             "to": end.strftime("%Y-%m-%dT%H:%MZ"),
-            "intensity": {
-                "forecast": intensity,
-                "actual": intensity,  # For mock, actual = forecast
-                "index": index
-            }
+            "intensity": intensity_obj
         })
     
     return data
@@ -203,6 +227,36 @@ def get_forecast(start_time: str, region_id: str = None, postcode: str = None):
         response["postcode"] = postcode.upper()
     
     return jsonify(response)
+
+
+# Request/response logging for debugging
+@app.before_request
+def log_request_info():
+    try:
+        body = None
+        if request.method in ("POST", "PUT", "PATCH"):
+            # attempt to show JSON body if present
+            body = request.get_json(silent=True)
+        logger.debug("Incoming request: %s %s | args=%s | json=%s", request.method, request.path, dict(request.args), body)
+    except Exception:
+        # Never let logging break the request handling
+        logger.exception("Error while logging request")
+
+
+@app.after_request
+def log_response_info(response):
+    try:
+        # Try to log JSON/text response body (truncate to avoid huge logs)
+        data = response.get_data(as_text=True)
+        max_len = 2000
+        if data and len(data) > max_len:
+            data_preview = data[:max_len] + "...[truncated]"
+        else:
+            data_preview = data
+        logger.debug("Response: %s %s | status=%s | body=%s", request.method, request.path, response.status, data_preview)
+    except Exception:
+        logger.exception("Error while logging response")
+    return response
 
 
 @app.route('/intensity')
@@ -405,10 +459,23 @@ Examples:
         default=30,
         help='Duration of each forecast slot in minutes (default: 30)'
     )
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
     
     args = parser.parse_args()
     
     global active_scenario, custom_pattern, STEP_MINUTES
+
+    # Configure logging now that args are known
+    logging.basicConfig(format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+    level = logging.DEBUG if args.debug else logging.INFO
+    logger.setLevel(level)
+    # Also configure Flask's own logger
+    app.logger.setLevel(level)
     
     if args.scenario == 'custom':
         if not args.file:
