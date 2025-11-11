@@ -93,7 +93,8 @@ class CarbonForecastProvider:
             response = requests.get(url, timeout=self.timeout)
             response.raise_for_status()
             payload = response.json()
-        except requests.RequestException:
+        except requests.RequestException as e:
+            _LOGGER.error("Failed to fetch carbon data from %s: %s", url, str(e))
             return []
 
         data = payload.get("data") if isinstance(payload, dict) else None
