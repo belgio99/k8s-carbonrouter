@@ -149,7 +149,7 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
     # Calculate which index in the pattern we should start from
     # The pattern offset is based on time elapsed from scenario_start_time
     pattern_length = len(pattern)
-    step_minutes = max(1, int(STEP_MINUTES))
+    step_minutes = STEP_MINUTES
     
     if scenario_start_time is None:
         # Auto-initialize on first request: set scenario start to current time
@@ -498,7 +498,7 @@ Examples:
         print(f"Description: {scenario['description']}")
         print(f"Pattern: {scenario['pattern']}")
     
-    STEP_MINUTES = max(1, args.step_minutes)
+    STEP_MINUTES = args.step_minutes
     print(f"Time step: {STEP_MINUTES} minute(s)")
 
     print(f"\nServer starting on http://{args.host}:{args.port}")
