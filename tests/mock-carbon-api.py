@@ -130,7 +130,7 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
         start_time: Start of forecast window (typically "now")
         num_periods: Number of periods to generate (default 96 = 48 hours at 30-min intervals)
     """
-    global active_scenario, custom_pattern
+    global active_scenario, custom_pattern, scenario_start_time
     
     data: List[Dict[str, Any]] = []
     
@@ -146,15 +146,30 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
     # Get current time to determine which periods are past vs future
     now = datetime.now(timezone.utc)
     
-    # Generate forecast entries
+    # Calculate which index in the pattern we should start from
+    # This is based on elapsed time since scenario_start_time (if set)
     pattern_length = len(pattern)
     step_minutes = max(1, int(STEP_MINUTES))
+    
+    if scenario_start_time:
+        # Calculate elapsed time since scenario started
+        elapsed_minutes = (now - scenario_start_time).total_seconds() / 60
+        # Calculate which step in the pattern we're at
+        pattern_offset = int(elapsed_minutes / step_minutes)
+    else:
+        # No offset - pattern starts from current minute aligned to step boundary
+        pattern_offset = 0
+    
+    # Generate forecast entries
     for i in range(num_periods):
+        # Calculate index into pattern, accounting for elapsed time
+        pattern_index = pattern_offset + i
+        
         # Get intensity value from pattern (repeat if configured)
         if repeat:
-            intensity = pattern[i % pattern_length]
+            intensity = pattern[pattern_index % pattern_length]
         else:
-            intensity = pattern[i] if i < pattern_length else pattern[-1]
+            intensity = pattern[pattern_index] if pattern_index < pattern_length else pattern[-1]
         
         # Add some small random variation for realism (±5%)
         # import random
@@ -262,18 +277,8 @@ def log_response_info(response):
 @app.route('/intensity')
 def get_current():
     """Return current intensity (first point in forecast)."""
-    global scenario_start_time
-    
-    # Use override time if set, otherwise use current time
-    if scenario_start_time:
-        now = scenario_start_time
-        # Advance time by the elapsed minutes since the scenario was reset
-        # This allows the pattern to progress naturally
-        now = now + timedelta(minutes=int((datetime.now(timezone.utc) - scenario_start_time).total_seconds() / 60))
-    else:
-        now = datetime.now(timezone.utc)
-    
-    # Floor to step-minute boundary
+    # Get current time floored to step-minute boundary
+    now = datetime.now(timezone.utc)
     step_minutes = max(1, int(STEP_MINUTES))
     minute = (now.minute // step_minutes) * step_minutes
     start = now.replace(minute=minute, second=0, microsecond=0)
