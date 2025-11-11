@@ -40,9 +40,9 @@ class CarbonForecastProvider:
         self.base_url = (configured or self._DEFAULT_BASE).rstrip("/")
         self._configured_base = configured
         timeout_val = timeout if timeout is not None else float(os.getenv("CARBON_API_TIMEOUT", "2.0"))
-        # Default cache TTL reduced to 10 seconds for faster response to carbon changes
-        # The old default of 300s was too slow for 15-second schedule updates
-        cache_val = cache_ttl if cache_ttl is not None else float(os.getenv("CARBON_API_CACHE_TTL", "10.0"))
+        # Default cache TTL set to 5 seconds for faster response to rapid carbon changes
+        # For testing with 15-second pattern steps, this ensures we catch most changes
+        cache_val = cache_ttl if cache_ttl is not None else float(os.getenv("CARBON_API_CACHE_TTL", "5.0"))
         target_val = target if target is not None else os.getenv("CARBON_API_TARGET", "national")
         self.timeout = float(timeout_val)
         self.cache_ttl = float(cache_val)
@@ -81,7 +81,9 @@ class CarbonForecastProvider:
             if self._cached_schedule and (time.time() - self._cached_schedule[0] < self.cache_ttl):
                 return self._cached_schedule[1]
 
-        start = self._floor_minute(datetime.now(timezone.utc))
+        # Use exact current time without rounding to get fine-grained pattern changes
+        # This is important for testing with fast-changing patterns (e.g., 15-second steps)
+        start = datetime.now(timezone.utc)
         url = f"{self.base_url}{self._build_schedule_path(start)}"
 
         if requests is None:
