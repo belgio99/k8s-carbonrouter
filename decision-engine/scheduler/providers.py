@@ -94,6 +94,14 @@ class CarbonForecastProvider:
         if not schedule:
             return []
 
+        # Log the fetched carbon intensity
+        if schedule:
+            _LOGGER.info(
+                "Fetched carbon intensity: now=%s, next=%s",
+                schedule[0].forecast,
+                schedule[1].forecast if len(schedule) > 1 else "N/A",
+            )
+
         with self._cache_lock:
             self._cached_schedule = (time.time(), schedule)
         return schedule
