@@ -224,9 +224,13 @@ def get_forecast(start_time: str, region_id: str = None, postcode: str = None):
     Supports national, regional, and postcode endpoints.
     """
     try:
-        # Parse start time
+        # Parse start time - support both minute and second precision
         if start_time.endswith('Z'):
-            start = datetime.strptime(start_time, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
+            # Try with seconds first, fall back to minutes only
+            try:
+                start = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            except ValueError:
+                start = datetime.strptime(start_time, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
         else:
             start = datetime.fromisoformat(start_time).astimezone(timezone.utc)
     except ValueError:

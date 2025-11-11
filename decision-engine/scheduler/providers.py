@@ -143,7 +143,15 @@ class CarbonForecastProvider:
         return horizon
 
     def _build_schedule_path(self, start: datetime) -> str:
-        period_start = start.strftime("%Y-%m-%dT%H:%MZ")
+        # Use second precision for mock APIs (localhost/host.docker.internal) for fine-grained testing
+        # Use minute precision for real Carbon Intensity UK API (backward compatible)
+        is_mock_api = "localhost" in self.base_url or "host.docker.internal" in self.base_url
+        
+        if is_mock_api:
+            period_start = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            period_start = start.strftime("%Y-%m-%dT%H:%MZ")
+        
         if self._target_type == "region" and self._target_value:
             return f"/regional/intensity/{period_start}/fw48h/regionid/{self._target_value}"
         if self._target_type == "postcode" and self._target_value:
