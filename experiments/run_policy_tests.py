@@ -17,20 +17,50 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
 import sys
+import requests
 
 POLICIES = ["credit-greedy", "forecast-aware", "forecast-aware-global", "precision-tier"]
 NAMESPACE = "carbonstat"
 SCHEDULE_NAME = "traffic-schedule"
 ENGINE_NAMESPACE = "carbonrouter-system"
 ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
+MOCK_CARBON_URL = "http://127.0.0.1:5001"
 
 def run_cmd(cmd: List[str], capture: bool = True) -> subprocess.CompletedProcess:
     """Run command and return result."""
     return subprocess.run(cmd, capture_output=capture, text=True, check=True)
 
+def reset_carbon_pattern() -> None:
+    """
+    Reset the mock carbon API pattern to start from the beginning.
+    
+    This ensures all test runs start with the same carbon intensity baseline,
+    making results comparable across different policies.
+    """
+    try:
+        response = requests.post(f"{MOCK_CARBON_URL}/reset", timeout=5)
+        if response.status_code == 200:
+            result = response.json()
+            print(f"  ✓ Carbon pattern reset to start")
+            print(f"     Start time: {result.get('start_time', 'unknown')}")
+        else:
+            print(f"  ⚠️  Warning: Could not reset carbon API (status {response.status_code})")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Carbon API not accessible: {e}")
+        print(f"     Tests will continue but results may be inconsistent")
+
+
 def patch_policy(policy: str) -> None:
     """Update TrafficSchedule with new policy."""
-    patch = json.dumps({"spec": {"scheduler": {"policy": policy}}})
+    patch = json.dumps({
+        "spec": {
+            "scheduler": {
+                "policy": policy,
+                "validFor": 30,
+                "carbonCacheTTL": 15
+            }
+        }
+    })
     run_cmd([
         "kubectl", "patch", "trafficschedule", SCHEDULE_NAME,
         "-n", NAMESPACE, "--type=merge", f"-p={patch}"
@@ -137,8 +167,11 @@ def test_policy(policy: str, output_dir: Path) -> Dict[str, Any]:
     
     # 2. Restart decision engine to reset credits
     restart_decision_engine()
+
+    # 3. Reset carbon pattern
+    reset_carbon_pattern()
     
-    # 3. Get initial state
+    # 4. Get initial state
     print("  ⏳ Collecting baseline metrics...")
     schedule_before = get_schedule_status()
     (policy_dir / "schedule_before.json").write_text(

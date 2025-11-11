@@ -135,7 +135,7 @@ def generate_forecast_data(start_time: datetime, num_periods: int = 96) -> List[
     data: List[Dict[str, Any]] = []
     
     # Determine which pattern to use
-    if active_scenario == "custom" and custom_pattern:
+    if custom_pattern is not None:
         pattern = custom_pattern["pattern"]
         repeat = custom_pattern.get("repeat", True)
     else:
@@ -461,7 +461,7 @@ Examples:
 
     parser.add_argument(
         '--step-minutes',
-        type=int,
+        type=float,
         default=30,
         help='Duration of each forecast slot in minutes (default: 30)'
     )
@@ -487,6 +487,7 @@ Examples:
         if not args.file:
             parser.error("--file required when using --scenario custom")
         custom_pattern = load_custom_scenario(args.file)
+        active_scenario = "custom"
         print(f"Loaded custom scenario from {args.file}")
         print(f"Pattern: {custom_pattern['pattern']}")
         print(f"Repeat: {custom_pattern['repeat']}")

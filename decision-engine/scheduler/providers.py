@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 import os
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
+
+_LOGGER = logging.getLogger("decision-engine.scheduler")
 
 try:  # pragma: no cover - optional dependency safeguard for linters
     import requests  # type: ignore[import]
@@ -183,7 +186,9 @@ class CarbonForecastProvider:
     @staticmethod
     def _floor_minute(moment: datetime) -> datetime:
         rounded = moment.astimezone(timezone.utc)
-        return rounded.replace(second=0, microsecond=0)
+        # Floor to nearest 15-second interval
+        seconds = (rounded.second // 15) * 15
+        return rounded.replace(second=seconds, microsecond=0)
 
     @staticmethod
     def _parse_time(value: Any) -> Optional[datetime]:

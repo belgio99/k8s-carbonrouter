@@ -176,5 +176,6 @@ cython_debug/
 *.bib
 
 .github/copilot-instructions.md
+GEMINI.md
 
 experiments/results
