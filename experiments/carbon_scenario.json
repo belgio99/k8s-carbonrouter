@@ -1,15 +1,14 @@
 {
-  "scenario": "custom",
-  "description": "10 minute test pattern with initial peak, long low dip, and rapid final rise (15-second steps, 40 points)",
+  "scenario": "forecast-aware-challenge",
+  "description": "10-minute pattern designed to showcase forecast-aware-global's predictive advantages. Low carbon with rising trend → sustained high carbon spike → recovery → repeat. 15-second steps, 40 points.",
   "repeat": true,
   "pattern": [
-    150, 170, 190, 210, 220,
-    210, 190, 170, 150, 120,
-    90, 60, 40, 30, 20,
-    10, 10, 30, 10, 20,
-    10, 10, 10, 20, 10,
-    10, 20, 10, 10, 10,
-    10, 10, 10, 20, 40,
-    80, 130, 190, 250, 300
+    40, 45, 50, 55, 60, 65, 70, 80,
+    120, 160, 200, 240, 280,
+    300, 300, 290, 280, 270, 260, 250,
+    180, 140, 100, 80, 60,
+    50, 55, 50, 55,
+    60, 70, 80, 100, 120,
+    160, 200, 240, 280, 300, 300
   ]
 }

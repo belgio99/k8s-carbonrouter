@@ -28,7 +28,7 @@ ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 
 # Test configuration
 TEST_DURATION_MINUTES = 10
-SAMPLE_INTERVAL_SECONDS = 15  # Match schedule evaluation interval for accurate carbon tracking
+SAMPLE_INTERVAL_SECONDS = 5  # Match schedule evaluation interval for accurate carbon tracking
 LOCUST_USERS = 150
 LOCUST_SPAWN_RATE = 50
 

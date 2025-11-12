@@ -38,7 +38,7 @@ spec:
         cpu: "1"
         memory: "512Mi"
   scheduler:
-    targetError: "0.1"
+    targetError: "0.15"
     creditMin: "-1.0"
     creditMax: "1.0"
     creditWindow: 10

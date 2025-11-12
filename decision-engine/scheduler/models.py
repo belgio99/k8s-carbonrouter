@@ -146,7 +146,7 @@ class SchedulerConfig:
         carbon_cache_ttl: Cache TTL for carbon data (seconds)
     """
 
-    target_error: float = 0.1
+    target_error: float = 0.15
     credit_min: float = -1.0
     credit_max: float = 1.0
     smoothing_window: int = 300  # seconds
@@ -166,7 +166,7 @@ class SchedulerConfig:
             SchedulerConfig instance with values from environment
         """
         return cls(
-            target_error=float(os.getenv("TARGET_ERROR", "0.1")),
+            target_error=float(os.getenv("TARGET_ERROR", "0.15")),
             credit_min=float(os.getenv("CREDIT_MIN", "-1.0")),
             credit_max=float(os.getenv("CREDIT_MAX", "1.0")),
             smoothing_window=int(os.getenv("CREDIT_WINDOW", "300")),
