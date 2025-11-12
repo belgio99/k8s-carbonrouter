@@ -277,7 +277,10 @@ def extract_router_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, f
     """Extract request counts per flavour from router metrics."""
     requests_by_flavour = {}
     for key, value in metrics.items():
-        if key.startswith('router_http_requests_total{') and 'flavour=' in key:
+        if (key.startswith('router_http_requests_total{') and
+            'flavour=' in key and
+            'method="POST"' in key and
+            'status="200"' in key):
             # Extract flavour name from label
             flavour_start = key.find('flavour="') + 9
             flavour_end = key.find('"', flavour_start)
