@@ -252,12 +252,13 @@ class DemandEstimate:
 class DemandEstimator:
     """Simple exponential smoothing demand predictor."""
 
-    def __init__(self, smoothing: float = 0.3, horizon: float = 60.0) -> None:
+    def __init__(self, smoothing: float = 0.3, horizon: float = 60.0, baseline_rate: float = 100.0) -> None:
         self.smoothing = smoothing
         self.horizon = horizon
         self._lock = threading.Lock()
-        self._rate: Optional[float] = None
-        self._last_timestamp: Optional[float] = None
+        # Initialize with baseline rate so forecast works immediately for PoC
+        self._rate: Optional[float] = baseline_rate
+        self._last_timestamp: Optional[float] = time.time()
 
     def update(self, request_count: int, window_seconds: float) -> None:
         if window_seconds <= 0:

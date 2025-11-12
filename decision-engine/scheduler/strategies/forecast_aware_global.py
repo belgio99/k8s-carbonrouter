@@ -127,10 +127,19 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         
         _LOGGER.debug(
             "ForecastAwareGlobal: adj=%.3f (carbon=%.3f, demand=%.3f, emissions=%.3f, lookahead=%.3f)",
-            total_adjustment, carbon_adjustment, demand_adjustment, 
+            total_adjustment, carbon_adjustment, demand_adjustment,
             emissions_adjustment, lookahead_adjustment
         )
-        
+
+        # Update cumulative emissions tracking based on commanded weights
+        # Calculate weighted average carbon intensity from this evaluation
+        weighted_carbon = sum(
+            weights.get(f.name, 0.0) * (f.carbon_intensity or 0.0)
+            for f in flavours_list
+        )
+        self._cumulative_carbon += weighted_carbon
+        self._request_count += 1
+
         return PolicyResult(weights, avg_precision, diagnostics)
 
     def _compute_carbon_trend_adjustment(
