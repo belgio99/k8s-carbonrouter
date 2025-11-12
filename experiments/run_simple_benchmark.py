@@ -29,8 +29,8 @@ ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 # Test configuration
 TEST_DURATION_MINUTES = 10
 SAMPLE_INTERVAL_SECONDS = 5  # Match schedule evaluation interval for accurate carbon tracking
-LOCUST_USERS = 150
-LOCUST_SPAWN_RATE = 50
+LOCUST_USERS = 300
+LOCUST_SPAWN_RATE = 75
 
 # Port-forward URLs
 ROUTER_URL = "http://127.0.0.1:18000"
@@ -39,6 +39,7 @@ CONSUMER_METRICS_URL = "http://127.0.0.1:18002/metrics"
 ENGINE_URL = "http://127.0.0.1:18004"
 ENGINE_METRICS_URL = "http://127.0.0.1:18003/metrics"
 MOCK_CARBON_URL = "http://127.0.0.1:5001"
+PROMETHEUS_URL = "http://127.0.0.1:19090"
 
 def run_cmd(cmd: List[str], capture: bool = True, timeout: int = 60) -> subprocess.CompletedProcess:
     """Run command and return result."""
@@ -293,6 +294,24 @@ def parse_prometheus_metrics(text: str) -> Dict[str, float]:
                 metrics[parts[0]] = float(parts[1])
     return metrics
 
+def query_prometheus(query: str) -> float:
+    """Execute a PromQL query and return the scalar result."""
+    try:
+        response = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": query},
+            timeout=5
+        )
+        if response.status_code == 200:
+            data = response.json()
+            result = data.get("data", {}).get("result", [])
+            if result and len(result) > 0:
+                value = result[0].get("value", [None, 0])
+                return float(value[1]) if len(value) > 1 else 0.0
+        return 0.0
+    except Exception:
+        return 0.0
+
 def extract_router_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, float]:
     """Extract request counts per flavour from router metrics."""
     requests_by_flavour = {}
@@ -442,7 +461,11 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
             "credit_balance", "credit_velocity", "engine_avg_precision",
             "carbon_now", "carbon_next",
             "requests_precision_30", "requests_precision_50", "requests_precision_100",
-            "commanded_weight_30", "commanded_weight_50", "commanded_weight_100"
+            "commanded_weight_30", "commanded_weight_50", "commanded_weight_100",
+            "queue_depth_total", "queue_depth_p30", "queue_depth_p50", "queue_depth_p100",
+            "replicas_router", "replicas_consumer", "replicas_target",
+            "ceiling_router", "ceiling_consumer", "ceiling_target",
+            "throttle_factor"
         ])
         csvfile.flush()
         
@@ -459,13 +482,15 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                 router_metrics = parse_prometheus_metrics(scrape_metrics(ROUTER_METRICS_URL))
                 engine_metrics = parse_prometheus_metrics(scrape_metrics(ENGINE_METRICS_URL))
                 
-                # Get current schedule from decision engine to see commanded weights
+                # Get current schedule from decision engine to see commanded weights and ceilings
                 try:
                     schedule_response = requests.get(
                         f"http://127.0.0.1:18004/schedule/{NAMESPACE}/{SCHEDULE_NAME}",
                         timeout=2
                     )
                     commanded_weights = {}
+                    effective_ceilings = {}
+                    throttle_factor = 0.0
                     if schedule_response.status_code == 200:
                         schedule_data = schedule_response.json()
                         flavours = schedule_data.get("flavours", [])
@@ -474,8 +499,24 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                             weight = flav.get("weight", 0)
                             if prec is not None:
                                 commanded_weights[f"precision-{int(prec)}"] = weight
+
+                        effective_ceilings = schedule_data.get("effectiveReplicaCeilings", {})
+                        throttle_factor = schedule_data.get("processingThrottle", 0.0)
                 except Exception:
                     commanded_weights = {}
+                    effective_ceilings = {}
+                    throttle_factor = 0.0
+
+                # Query Prometheus for queue depths
+                queue_depth_total = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}"}})')
+                queue_depth_p30 = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}",queue=~".*precision-30.*"}})')
+                queue_depth_p50 = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}",queue=~".*precision-50.*"}})')
+                queue_depth_p100 = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}",queue=~".*precision-100.*"}})')
+
+                # Query Prometheus for replica counts
+                replicas_router = query_prometheus(f'kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*router.*"}}')
+                replicas_consumer = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*consumer.*"}})')
+                replicas_target = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~"carbonstat-precision.*"}})')
                 
                 current_requests = extract_router_requests_by_flavour(router_metrics)
                 
@@ -524,7 +565,18 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                     int(delta_requests.get("precision-100", 0)),
                     commanded_weights.get("precision-30", ""),
                     commanded_weights.get("precision-50", ""),
-                    commanded_weights.get("precision-100", "")
+                    commanded_weights.get("precision-100", ""),
+                    int(queue_depth_total),
+                    int(queue_depth_p30),
+                    int(queue_depth_p50),
+                    int(queue_depth_p100),
+                    int(replicas_router),
+                    int(replicas_consumer),
+                    int(replicas_target),
+                    effective_ceilings.get("router", ""),
+                    effective_ceilings.get("consumer", ""),
+                    effective_ceilings.get("target", ""),
+                    f"{throttle_factor:.4f}" if isinstance(throttle_factor, (int, float)) else ""
                 ])
                 csvfile.flush()
                 
