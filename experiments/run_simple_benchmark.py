@@ -111,20 +111,40 @@ def ensure_port_forwards() -> None:
 def reset_carbon_pattern() -> None:
     """
     Reset the mock carbon API pattern to start from the beginning.
-    
+
     This ensures all test runs start with the same carbon intensity baseline,
     making results comparable across different policies.
     """
     try:
+        # First, verify the API is accessible
+        health_response = requests.get(f"{MOCK_CARBON_URL}/health", timeout=2)
+        if health_response.status_code != 200:
+            print(f"  ⚠️  Warning: Carbon API health check failed (status {health_response.status_code})")
+            print(f"     The API may be running an old version. Consider restarting it:")
+            print(f"     pkill -f mock-carbon-api && cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+            return
+
+        # Try to reset the pattern
         response = requests.post(f"{MOCK_CARBON_URL}/reset", timeout=5)
         if response.status_code == 200:
             result = response.json()
             print(f"  ✓ Carbon pattern reset to start")
             print(f"     Start time: {result.get('start_time', 'unknown')}")
+        elif response.status_code == 404:
+            print(f"  ⚠️  Warning: Carbon API /reset endpoint not found!")
+            print(f"     The running carbon API process may be outdated.")
+            print(f"     To fix: pkill -f mock-carbon-api && cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+            print(f"     Continuing test but carbon intensity may not start from beginning...")
         else:
             print(f"  ⚠️  Warning: Could not reset carbon API (status {response.status_code})")
+            print(f"     Response: {response.text[:200]}")
+    except requests.exceptions.ConnectionError:
+        print(f"  ⚠️  ERROR: Carbon API not running at {MOCK_CARBON_URL}")
+        print(f"     Start it with: cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+        print(f"     Then re-run this test.")
+        sys.exit(1)
     except Exception as e:
-        print(f"  ⚠️  Warning: Carbon API not accessible: {e}")
+        print(f"  ⚠️  Warning: Carbon API error: {e}")
         print(f"     Tests will continue but results may be inconsistent")
 
 
