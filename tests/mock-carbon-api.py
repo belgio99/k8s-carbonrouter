@@ -28,7 +28,7 @@ from typing import List, Dict, Any
 import logging
 from flask import Flask, jsonify, request
 
-STEP_MINUTES = 1
+STEP_MINUTES = 0.25  # 15 seconds - matches carbon_scenario.json design
 
 app = Flask(__name__)
 
@@ -466,8 +466,8 @@ Examples:
     parser.add_argument(
         '--step-minutes',
         type=float,
-        default=30,
-        help='Duration of each forecast slot in minutes (default: 30)'
+        default=0.25,
+        help='Duration of each forecast slot in minutes (default: 0.25 = 15 seconds)'
     )
 
     parser.add_argument(
