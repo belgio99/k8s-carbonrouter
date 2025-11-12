@@ -33,8 +33,12 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
         elif trend < 0:
             adjustment = min(0.3, abs(trend) / max(forecast.intensity_now, 1e-6) * 0.5)
 
+        # Identify baseline (highest precision) flavour, not highest-weighted flavour
+        sorted_flavours = sorted(flavours_list, key=lambda f: f.precision, reverse=True)
+        baseline_name = sorted_flavours[0].name if sorted_flavours else None
+
         weights = {
-            name: max(0.0, min(1.0, weight + adjustment if name != max(base.weights, key=base.weights.get) else weight - adjustment))
+            name: max(0.0, min(1.0, weight + adjustment if name != baseline_name else weight - adjustment))
             for name, weight in base.weights.items()
         }
         total = sum(weights.values()) or 1.0

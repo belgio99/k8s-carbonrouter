@@ -39,7 +39,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         """Initialize with cumulative emissions tracker."""
         super().__init__(*args, **kwargs)
         self._cumulative_carbon: float = 0.0
-        self._request_count: int = 0
+        self._evaluation_count: int = 0  # Count of evaluations, not individual requests
         
     def evaluate(
         self,
@@ -118,10 +118,10 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             "lookahead_adjustment": lookahead_adjustment,
             "total_adjustment": total_adjustment,
             "cumulative_carbon_gco2": self._cumulative_carbon,
-            "request_count": float(self._request_count),
-            "avg_carbon_per_request": (
-                self._cumulative_carbon / self._request_count 
-                if self._request_count > 0 else 0.0
+            "evaluation_count": float(self._evaluation_count),
+            "avg_carbon_per_evaluation": (
+                self._cumulative_carbon / self._evaluation_count
+                if self._evaluation_count > 0 else 0.0
             ),
         })
         
@@ -138,7 +138,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             for f in flavours_list
         )
         self._cumulative_carbon += weighted_carbon
-        self._request_count += 1
+        self._evaluation_count += 1
 
         return PolicyResult(weights, avg_precision, diagnostics)
 
@@ -216,38 +216,38 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             return 0.0  # Stable demand
 
     def _compute_emissions_budget_adjustment(
-        self, 
+        self,
         forecast: ForecastSnapshot
     ) -> float:
         """
         Compute adjustment based on cumulative emissions budget.
-        
+
         If we've been emitting too much carbon, encourage greener flavours.
         If we've been very clean, we have more budget to spend.
-        
+
         Returns:
             Adjustment factor in range [-1.0, +1.0]
         """
-        if self._request_count < 10:  # Not enough data
+        if self._evaluation_count < 10:  # Not enough data
             return 0.0
-        
+
         if forecast.intensity_now is None or forecast.intensity_now <= 0:
             return 0.0
-        
-        # Calculate average carbon per request
-        avg_carbon_per_req = self._cumulative_carbon / self._request_count
-        
+
+        # Calculate average carbon per evaluation (weighted intensity commanded per evaluation cycle)
+        avg_carbon_per_eval = self._cumulative_carbon / self._evaluation_count
+
         # Compare with current intensity (as a proxy for "expected" emissions)
         # This is a heuristic: if we've been emitting more than current intensity,
         # we should be more conservative
         current_intensity = forecast.intensity_now
-        
-        if avg_carbon_per_req > current_intensity * 1.2:
+
+        if avg_carbon_per_eval > current_intensity * 1.2:
             # We've been emitting significantly more than current rate
             return 0.5  # Push towards greener flavours
-        elif avg_carbon_per_req > current_intensity * 1.05:
+        elif avg_carbon_per_eval > current_intensity * 1.05:
             return 0.2  # Slightly prefer greener
-        elif avg_carbon_per_req < current_intensity * 0.8:
+        elif avg_carbon_per_eval < current_intensity * 0.8:
             # We've been very clean, can afford higher precision
             return -0.3
         else:
@@ -410,9 +410,10 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
     ) -> None:
         """
         Update cumulative emissions tracker after processing a request.
-        
+
         This should be called by the engine after each request is processed.
-        
+        NOTE: This method is currently not used; emissions are tracked per evaluation instead.
+
         Args:
             flavour_name: Name of the flavour that processed the request
             flavours: List of available flavours
@@ -420,10 +421,10 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         for flavour in flavours:
             if flavour.name == flavour_name:
                 self._cumulative_carbon += flavour.carbon_intensity
-                self._request_count += 1
+                self._evaluation_count += 1
                 break
-    
+
     def reset_cumulative_emissions(self) -> None:
         """Reset cumulative emissions tracker (e.g., at start of new period)."""
         self._cumulative_carbon = 0.0
-        self._request_count = 0
+        self._evaluation_count = 0
