@@ -80,7 +80,8 @@ class CreditGreedyPolicy(SchedulerPolicy):
         baseline_intensity = baseline.carbon_intensity or 0.0
         intensity_gain = baseline_intensity - (flavour.carbon_intensity or 0.0)
         error_penalty = max(1e-6, flavour.expected_error())
-        score = intensity_gain if intensity_gain > 0 else 0.5 * error_penalty
+        # Only greener flavours get meaningful scores
+        score = max(1e-6, intensity_gain) if intensity_gain > 0 else 1e-6
         return max(1e-6, score / error_penalty)
 
     @staticmethod

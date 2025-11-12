@@ -32,9 +32,11 @@ class PrecisionTierPolicy(SchedulerPolicy):
         }
 
         # Base allocations respecting ledger balance
+        # Positive balance (earned from low-precision) → reduce low-precision usage
+        # Negative balance (spent on high-precision) → allow more low-precision usage
         allowance = 0.0
         if self.ledger.credit_max > 0:
-            allowance = max(0.0, min(1.0, self.ledger.balance / self.ledger.credit_max))
+            allowance = max(0.0, min(1.0, 0.5 - self.ledger.balance / (2 * self.ledger.credit_max)))
 
         weights: Dict[str, float] = {}
         total_primary = len(tiers["tier-1"]) or 1
