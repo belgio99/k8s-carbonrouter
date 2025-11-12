@@ -215,12 +215,14 @@ async def forward_and_reply(
         debug(
             f"Payload: method={payload.get('method')} path={payload.get('path')} headers={payload.get('headers')}"
         )
+        # Extract precision number from flavour name (e.g., "precision-100" -> "100")
+        precision_value = flavour.split("-")[-1] if "-" in flavour else flavour
         response = await send_with_retry(
             http_client,
             method=payload["method"],
             url=f"{TARGET_BASE_URL}{payload['path']}",
             params=payload.get("query"),
-            headers={**payload.get("headers", {}), "x-carbonrouter": flavour},
+            headers={**payload.get("headers", {}), "x-carbonrouter": precision_value},
             content=b64dec(payload["body"]),
         )
         status_code = response.status_code
