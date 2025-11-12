@@ -723,16 +723,13 @@ func (r *FlavourRouterReconciler) ensureRouterScaledObject(ctx context.Context, 
 	soName := fmt.Sprintf("buffer-service-router-%s", svc.Name)
 	targetName := fmt.Sprintf("buffer-service-router-%s", svc.Name)
 
-	// Apply carbon-aware replica ceiling if available
+	// Router is exempt from carbon-aware throttling to ensure incoming traffic is always handled
+	// Queue accumulation happens downstream in consumers/targets during high carbon periods
 	maxReplicas := autoscaling.MaxReplicaCount
 	componentName := "router"
-	if ceiling, ok := replicaCeilings[componentName]; ok && ceiling > 0 {
-		// Use the carbon-aware ceiling, but respect the configured max as an upper bound
-		if autoscaling.MaxReplicaCount != nil && ceiling < *autoscaling.MaxReplicaCount {
-			maxReplicas = &ceiling
-			log.Info("Applying carbon-aware replica ceiling", "component", componentName, "ceiling", ceiling, "original", *autoscaling.MaxReplicaCount)
-		}
-	}
+	// NOTE: Router scaling ceiling is NOT applied - router scales freely based on load
+	// This is intentional: router must accept all incoming requests to prevent client failures
+	log.Info("Router scaling freely (exempt from carbon-aware ceiling)", "component", componentName, "maxReplicas", *maxReplicas)
 
 	so := &kedav1alpha1.ScaledObject{
 		ObjectMeta: metav1.ObjectMeta{
@@ -807,7 +804,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 			Metadata: map[string]string{
 				"queueName": directQueueName(svc.Namespace, svc.Name, precision),
 				"mode":      "QueueLength",
-				"value":     "1000000",
+				"value":     "500",
 			},
 		})
 	}
@@ -841,7 +838,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 					Metadata: map[string]string{
 						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
 						"query":               "sum(increase(consumer_http_requests_created[60s]))",
-						"threshold":           "1000000",
+						"threshold":           "500",
 						"activationThreshold": "1",
 					},
 				},
@@ -922,7 +919,7 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 					Metadata: map[string]string{
 						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
 						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_queue_messages_ready{queue="%s"}[30s]))`, bufferedQueue),
-						"threshold":           "1000000",
+						"threshold":           "500",
 						"activationThreshold": "1",
 					},
 				},
@@ -932,7 +929,7 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 					Metadata: map[string]string{
 						"queueName": directQueue,
 						"mode":      "QueueLength",
-						"value":     "1000000",
+						"value":     "500",
 					},
 				},
 				{

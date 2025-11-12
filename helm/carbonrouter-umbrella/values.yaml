@@ -43,6 +43,13 @@ gateway:
 decision-engine:
   podAnnotations:
     sidecar.istio.io/inject: "false"
+  env:
+    - name: THROTTLE_MIN
+      value: "0.15"
+    - name: THROTTLE_INTENSITY_FLOOR
+      value: "100"
+    - name: THROTTLE_INTENSITY_CEILING
+      value: "300"
 buffer-service:
   podAnnotations:
     sidecar.istio.io/inject: "true"
