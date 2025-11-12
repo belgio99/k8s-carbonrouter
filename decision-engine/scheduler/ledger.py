@@ -4,8 +4,8 @@ Credit Ledger for Quality-of-Service Tracking
 The credit ledger maintains a balance between target quality (error threshold)
 and realized quality (actual error from completed requests). This enables
 the scheduler to:
-- Accumulate "credit" when using high-precision strategies (quality surplus)
-- Spend "credit" when using low-precision strategies (quality deficit)
+- Spend "credit" when using high-precision strategies (quality surplus, low error)
+- Accumulate "credit" when using low-precision strategies (quality deficit, high error)
 - Balance quality over time rather than meeting thresholds for every request
 
 The ledger uses a sliding window to track recent quality trends (velocity)
@@ -23,15 +23,15 @@ from typing import Deque
 class CreditLedger:
     """
     Tracks quality credit balance over time.
-    
+
     The ledger computes:
-    - Balance: Cumulative difference between target and realized error (range: -1.0 to +1.0)
+    - Balance: Cumulative difference between realized and target error (range: -1.0 to +1.0)
     - Velocity: Average rate of credit change (trend indicator)
-    
-    Positive balance = Quality surplus (can use cheaper strategies)
-    Negative balance = Quality deficit (need higher precision strategies)
+
+    Positive balance = Quality deficit accumulated (earned credit from low-precision use)
+    Negative balance = Quality surplus consumed (spent credit on high-precision use)
     Zero balance = Neutral state (quality at target level)
-    
+
     Attributes:
         target_error: Target quality error threshold (e.g., 0.1 = 10% error)
         credit_min: Minimum allowed credit balance (quality debt limit, typically -1.0)
@@ -57,26 +57,30 @@ class CreditLedger:
     def update(self, realised_precision: float) -> float:
         """
         Update ledger based on the precision of a completed request.
-        
+
         Calculates:
         1. Realized error from precision (error = 1 - precision)
-        2. Credit delta (target_error - realized_error)
+        2. Credit delta (realized_error - target_error)
         3. Updates balance, clamped to [credit_min, credit_max] (typically -1.0 to +1.0)
-        
+
         Args:
             realised_precision: Actual precision of completed request (0.0-1.0)
-            
+
         Returns:
             Updated credit balance
-            
+
         Example:
-            If target_error=0.1 and realized_precision=0.95:
+            If target_error=0.1 and realized_precision=0.95 (high-precision):
             - realized_error = 1 - 0.95 = 0.05
-            - delta = 0.1 - 0.05 = +0.05 (credit surplus)
-            After 20 such requests: balance = 0.05 × 20 = +1.0 (max credit)
+            - delta = 0.05 - 0.1 = -0.05 (spending credit)
+            After 20 such requests: balance = -0.05 × 20 = -1.0 (max debt)
+
+            If target_error=0.1 and realized_precision=0.3 (low-precision):
+            - realized_error = 1 - 0.3 = 0.7
+            - delta = 0.7 - 0.1 = +0.6 (earning credit back)
         """
         realised_error = max(0.0, 1.0 - realised_precision)
-        delta = self.target_error - realised_error
+        delta = realised_error - self.target_error
         self._history.append(delta)
         self._balance = max(self.credit_min, min(self.credit_max, self._balance + delta))
         return self._balance
@@ -84,11 +88,11 @@ class CreditLedger:
     def velocity(self) -> float:
         """
         Calculate average credit change rate over the sliding window.
-        
-        Positive velocity = Quality improving (accumulating credits)
-        Negative velocity = Quality degrading (losing credits)
-        Zero velocity = Stable quality at target level
-        
+
+        Positive velocity = Using low-precision strategies (earning credits)
+        Negative velocity = Using high-precision strategies (spending credits)
+        Zero velocity = Balanced quality at target level
+
         Returns:
             Average credit delta per request over window
         """
