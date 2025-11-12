@@ -144,6 +144,9 @@ class SchedulerConfig:
         carbon_target: Carbon API target region (e.g., "national", "local")
         carbon_timeout: Timeout for carbon API requests (seconds)
         carbon_cache_ttl: Cache TTL for carbon data (seconds)
+        throttle_min: Minimum throttle factor (prevents over-throttling)
+        throttle_intensity_floor: Carbon intensity floor for throttling (gCO2eq/kWh)
+        throttle_intensity_ceiling: Carbon intensity ceiling for throttling (gCO2eq/kWh)
     """
 
     target_error: float = 0.15
@@ -156,6 +159,9 @@ class SchedulerConfig:
     carbon_target: str = "national"
     carbon_timeout: float = 2.0
     carbon_cache_ttl: float = 300.0
+    throttle_min: float = 0.2  # 20% minimum throttle
+    throttle_intensity_floor: float = 150.0  # Start throttling above 150 gCO2/kWh
+    throttle_intensity_ceiling: float = 350.0  # Full throttle at 350+ gCO2/kWh
 
     @classmethod
     def from_env(cls) -> "SchedulerConfig":
@@ -177,6 +183,9 @@ class SchedulerConfig:
             carbon_timeout=float(os.getenv("CARBON_API_TIMEOUT", "2.0")),
             # Default cache TTL set to 5 seconds for faster response to rapid carbon changes
             carbon_cache_ttl=float(os.getenv("CARBON_API_CACHE_TTL", "5.0")),
+            throttle_min=float(os.getenv("THROTTLE_MIN", "0.2")),
+            throttle_intensity_floor=float(os.getenv("THROTTLE_INTENSITY_FLOOR", "150.0")),
+            throttle_intensity_ceiling=float(os.getenv("THROTTLE_INTENSITY_CEILING", "350.0")),
         )
 
     def clone(self) -> "SchedulerConfig":
@@ -299,29 +308,28 @@ class ScalingDirective:
         credit_balance: float,
         config: SchedulerConfig,
         forecast: ForecastSnapshot,
-        min_throttle: float = 0.2,
-        intensity_floor: float = 150.0,
-        intensity_ceiling: float = 350.0,
         component_bounds: Optional[Mapping[str, Mapping[str, int]]] = None,
     ) -> "ScalingDirective":
         """
         Compute scaling directive from current system state.
-        
+
         Combines credit balance and carbon intensity to determine throttling level.
         Lower credits or higher carbon intensity results in more aggressive throttling.
-        
+
         Args:
             credit_balance: Current quality credit balance
-            config: Scheduler configuration
+            config: Scheduler configuration with throttling parameters
             forecast: Carbon intensity forecast
-            min_throttle: Minimum throttle value (prevents over-throttling)
-            intensity_floor: Carbon intensity floor for scaling (gCO2eq/kWh)
-            intensity_ceiling: Carbon intensity ceiling for scaling (gCO2eq/kWh)
             component_bounds: Min/max replica constraints per component
-            
+
         Returns:
             ScalingDirective with computed throttle and replica ceilings
         """
+        # Use throttling parameters from config
+        min_throttle = config.throttle_min
+        intensity_floor = config.throttle_intensity_floor
+        intensity_ceiling = config.throttle_intensity_ceiling
+
         span = config.credit_max - config.credit_min
         if span <= 0:
             credits_ratio = 1.0
