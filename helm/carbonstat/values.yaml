@@ -126,12 +126,12 @@ instances:
   - name: precision-100
     flavour: "high"
     precision: 100
-    carbonIntensity: 1.0  # Relative carbon intensity (baseline)
+    carbonIntensity: 2.0  # Relative carbon intensity (baseline) - increased 2x for better carbon differentiation
   - name: precision-50
     flavour: "mid"
     precision: 50
-    carbonIntensity: 0.6  # Medium carbon footprint
+    carbonIntensity: 1.0  # Medium carbon footprint - 50% of p100
   - name: precision-30
     flavour: "low"
     precision: 30
-    carbonIntensity: 0.3  # Low carbon footprint
+    carbonIntensity: 0.4  # Low carbon footprint - 20% of p100

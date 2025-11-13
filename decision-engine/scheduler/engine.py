@@ -329,9 +329,9 @@ class SchedulerEngine:
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                 _LOGGER.warning("Invalid SCHEDULER_STRATEGIES env var: %s", exc)
         return [
-            FlavourProfile(precision_key(1.0), precision=1.0, carbon_intensity=1.0),
-            FlavourProfile(precision_key(0.85), precision=0.85, carbon_intensity=0.7),
-            FlavourProfile(precision_key(0.7), precision=0.7, carbon_intensity=0.4),
+            FlavourProfile(precision_key(1.0), precision=1.0, carbon_intensity=2.0),
+            FlavourProfile(precision_key(0.85), precision=0.85, carbon_intensity=1.4),
+            FlavourProfile(precision_key(0.7), precision=0.7, carbon_intensity=0.56),
         ]
 
     def _build_policy(self, name: str) -> SchedulerPolicy:
