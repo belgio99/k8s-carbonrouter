@@ -330,8 +330,8 @@ class SchedulerEngine:
                 _LOGGER.warning("Invalid SCHEDULER_STRATEGIES env var: %s", exc)
         return [
             FlavourProfile(precision_key(1.0), precision=1.0, carbon_intensity=1.0),
-            FlavourProfile(precision_key(0.85), precision=0.85, carbon_intensity=0.7),
-            FlavourProfile(precision_key(0.7), precision=0.7, carbon_intensity=0.4),
+            FlavourProfile(precision_key(0.5), precision=0.5, carbon_intensity=0.6),
+            FlavourProfile(precision_key(0.3), precision=0.3, carbon_intensity=0.3),
         ]
 
     def _build_policy(self, name: str) -> SchedulerPolicy:
