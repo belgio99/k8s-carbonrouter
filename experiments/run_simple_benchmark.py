@@ -87,7 +87,7 @@ def ensure_port_forwards() -> None:
     print("  ⚠️  Some port-forwards are down, restarting them...")
     
     # Run the robust setup script
-    script_path = "/Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments/setup_portforwards_robust.sh"
+    script_path = "/Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments/setup_portforwards.sh"
     
     try:
         result = subprocess.run(
@@ -387,13 +387,12 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     reset_carbon_pattern()
     
     # 2. Reset decision engine (clears credit balance and cache)
-    # TEMPORARILY DISABLED - port-forwards not stable enough after pod resets
-    # reset_decision_engine()
-    
+    reset_decision_engine()
+
     # 3. Reset router (clears request counters)
     # TEMPORARILY DISABLED - port-forwards not stable enough after pod resets
     # reset_router()
-    
+
     # 4. Ensure port-forwards are working (they break when pods restart)
     ensure_port_forwards()
     
