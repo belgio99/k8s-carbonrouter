@@ -217,6 +217,11 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err := r.Get(ctx, req.NamespacedName, &existing); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		// Requeue to give decision engine time to process the configuration
+		// This prevents immediately trying to GET a schedule that was just created
+		log.Info("Configuration pushed successfully, requeueing to allow decision engine processing")
+		return ctrl.Result{RequeueAfter: schedulePendingInterval}, nil
 	} else {
 		log.V(1).Info("Scheduler configuration unchanged; skipping push")
 	}
