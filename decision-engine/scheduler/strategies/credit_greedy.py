@@ -40,11 +40,12 @@ class CreditGreedyPolicy(SchedulerPolicy):
         # Carbon-aware adjustment: when carbon is high, spend credits more aggressively
         carbon_multiplier = 1.0
         if forecast and forecast.intensity_now is not None:
-            # Use a baseline carbon intensity (50 gCO2/kWh provides better granularity for typical ranges)
-            baseline_carbon = 50.0
+            # Use a baseline carbon intensity matching typical test ranges (40-300 gCO2/kWh)
+            # 150 gCO2/kWh allows low carbon (<100) to favor p100, high carbon (>200) to penalize it
+            baseline_carbon = 150.0
             carbon_ratio = forecast.intensity_now / baseline_carbon
-            # If carbon is high (>50), increase allowance to use more low-precision (low-carbon) flavours
-            # If carbon is low (<50), decrease allowance to preserve high precision when carbon is cheap
+            # If carbon is high (>150), increase allowance to use more low-precision (low-carbon) flavours
+            # If carbon is low (<150), decrease allowance to preserve high precision when carbon is cheap
             carbon_multiplier = max(0.5, min(2.0, carbon_ratio))
         
         allowance = min(1.0, base_allowance * carbon_multiplier)
