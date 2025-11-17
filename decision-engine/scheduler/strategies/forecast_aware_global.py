@@ -93,15 +93,15 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         credit_pressure = self._credit_pressure_adjustment()
 
         total_adjustment = (
-            0.35 * carbon_adjustment +      # 35% weight on carbon trend
-            0.20 * demand_adjustment +      # 20% weight on demand forecast
+            0.25 * carbon_adjustment +      # 25% weight on carbon trend (reduced from 35%)
+            0.25 * demand_adjustment +      # 25% weight on demand forecast (increased from 20%)
             0.20 * emissions_adjustment +   # 20% weight on emissions budget
-            0.15 * lookahead_adjustment +   # 15% weight on extended forecast
+            0.20 * lookahead_adjustment +   # 20% weight on extended forecast (increased from 15%)
             0.10 * credit_pressure          # 10% guard-rail from ledger state
         )
-        
+
         # Clamp total adjustment to reasonable bounds
-        total_adjustment = max(-0.8, min(0.8, total_adjustment))
+        total_adjustment = max(-1.2, min(1.2, total_adjustment))  # Increased from ±0.8 to ±1.2
         
         # Apply adjustment to weights
         weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list)
@@ -147,41 +147,41 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         return PolicyResult(weights, avg_precision, diagnostics)
 
     def _compute_carbon_trend_adjustment(
-        self, 
+        self,
         forecast: ForecastSnapshot
     ) -> float:
         """
         Compute adjustment based on carbon intensity trend.
-        
+
         Returns:
             Adjustment factor in range [-1.0, +1.0]
-            Negative = reduce green flavours (conserve credit)
-            Positive = increase green flavours (spend credit)
+            Positive = reduce p100 (conserve quality, use greener flavours)
+            Negative = increase p100 (spend quality, use baseline)
         """
         if forecast.intensity_now is None or forecast.intensity_next is None:
             return 0.0
-            
+
         current = forecast.intensity_now
         next_period = forecast.intensity_next
-        
+
         if current <= 0:
             return 0.0
-            
+
         # Calculate relative trend
         trend = (next_period - current) / current
-        
-        # Strong positive trend (intensity rising) → conserve credit
-        # Strong negative trend (intensity falling) → spend credit
+
+        # Strong positive trend (intensity rising) → conserve credit (reduce p100)
+        # Strong negative trend (intensity falling) → spend credit (increase p100)
         if trend > 0.2:  # Rising by >20%
-            return -0.8  # Strongly conserve
+            return 0.8  # Strongly conserve (POSITIVE = reduce p100)
         elif trend > 0.05:  # Rising by >5%
-            return -0.4  # Moderately conserve
+            return 0.4  # Moderately conserve
         elif trend < -0.2:  # Falling by >20%
-            return 0.8  # Strongly spend
+            return -0.8  # Strongly spend (NEGATIVE = increase p100)
         elif trend < -0.05:  # Falling by >5%
-            return 0.4  # Moderately spend
+            return -0.4  # Moderately spend
         else:
-            return trend * 2.0  # Linear scaling for small changes
+            return -trend * 2.0  # Linear scaling for small changes (FLIPPED SIGN)
 
     def _compute_demand_adjustment(
         self, 

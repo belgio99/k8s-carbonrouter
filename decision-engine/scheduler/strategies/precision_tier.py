@@ -42,13 +42,8 @@ class PrecisionTierPolicy(SchedulerPolicy):
             "tier-3": allowance * 0.55,
         }
 
-        # Bias tier shares by the average carbon intensity of each tier.
-        tier_carbon_scores = {
-            tier: self._tier_carbon_factor(bucket)
-            for tier, bucket in tiers.items()
-        }
-        for tier in tier_shares:
-            tier_shares[tier] *= tier_carbon_scores[tier] or 0.0
+        # NOTE: Carbon scoring removed to maintain non-carbon-aware baseline
+        # This strategy should only consider credit balance, not carbon intensity
 
         total_share = sum(tier_shares.values()) or 1.0
         tier_shares = {k: v / total_share for k, v in tier_shares.items()}
@@ -101,6 +96,6 @@ class PrecisionTierPolicy(SchedulerPolicy):
 
     @staticmethod
     def _flavour_carbon_weight(flavour: FlavourProfile) -> float:
-        carbon = flavour.carbon_intensity or 150.0
-        precision_bias = 0.5 + 0.5 * flavour.precision
-        return max(1e-3, precision_bias * (150.0 / max(25.0, carbon)))
+        # Return weight based on precision only, no carbon influence
+        # This maintains non-carbon-aware baseline characteristic
+        return 0.5 + 0.5 * flavour.precision
