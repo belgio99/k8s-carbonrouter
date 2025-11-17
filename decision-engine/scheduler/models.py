@@ -463,7 +463,8 @@ class ScheduleDecision:
             Complete ScheduleDecision ready for publication
         """
 
-        valid_until = datetime.utcnow() + timedelta(seconds=config.valid_for)
+        config_valid_until = datetime.utcnow() + timedelta(seconds=config.valid_for)
+        valid_until = config_valid_until
         now_utc = datetime.utcnow()
         for point in forecast.schedule:
             candidate = point.end
@@ -473,7 +474,7 @@ class ScheduleDecision:
                 candidate = candidate.astimezone(timezone.utc).replace(tzinfo=None)
             if candidate <= now_utc:
                 continue
-            valid_until = candidate
+            valid_until = min(config_valid_until, candidate)
             break
 
         # Normalise weights to integer percentages summing to 100.
