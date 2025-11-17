@@ -29,13 +29,14 @@ class CreditGreedyPolicy(SchedulerPolicy):
         baseline = flavours_list[0]
 
         # Portion of traffic we can spend on non-baseline flavours is first dictated by credit.
+        # Positive balance = surplus (can spend more), Negative balance = debt (must conserve)
         credit_span = (self.ledger.credit_max - self.ledger.credit_min) or 1.0
         normalised_credit = (self.ledger.balance - self.ledger.credit_min) / credit_span
-        base_allowance = max(0.0, min(1.0, 1.0 - normalised_credit))
+        base_allowance = max(0.0, min(1.0, normalised_credit))
 
-        # Guard-rail: if we are already in quality debt (positive balance), shrink allowance
-        if self.ledger.balance > 0.0 and self.ledger.credit_max > 0:
-            debt_ratio = min(1.0, self.ledger.balance / self.ledger.credit_max)
+        # Guard-rail: if we are already in quality debt (negative balance), shrink allowance
+        if self.ledger.balance < 0.0 and self.ledger.credit_min < 0:
+            debt_ratio = min(1.0, abs(self.ledger.balance) / abs(self.ledger.credit_min))
             base_allowance *= max(0.2, 1.0 - 0.5 * debt_ratio)
 
         # React to the current (not forecasted) carbon intensity.

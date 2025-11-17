@@ -32,9 +32,10 @@ class PrecisionTierPolicy(SchedulerPolicy):
         }
 
         # Base allocations respecting ledger balance
+        # Positive balance = surplus (can spend more), Negative balance = debt (must conserve)
         allowance = 0.0
         if self.ledger.credit_max > 0:
-            allowance = max(0.0, min(1.0, 0.5 - self.ledger.balance / (2 * self.ledger.credit_max)))
+            allowance = max(0.0, min(1.0, 0.5 + self.ledger.balance / (2 * self.ledger.credit_max)))
 
         tier_shares = {
             "tier-1": max(0.25, 1.0 - allowance),

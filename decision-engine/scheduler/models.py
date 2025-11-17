@@ -135,8 +135,8 @@ class SchedulerConfig:
     
     Attributes:
         target_error: Target quality error threshold (0.0-1.0, default 0.1 = 10% error)
-        credit_min: Minimum credit balance (quality debt limit, range: -1.0 to 0.0)
-        credit_max: Maximum credit balance (quality surplus limit, range: 0.0 to 1.0)
+        credit_min: Minimum credit balance (quality debt limit, typically -1.0, negative = debt)
+        credit_max: Maximum credit balance (quality surplus limit, typically +1.0, positive = surplus)
         smoothing_window: Time window for credit velocity smoothing (seconds)
         policy_name: Scheduling policy to use (e.g., "credit-greedy", "forecast-aware")
         valid_for: Schedule validity period (seconds)

@@ -398,8 +398,9 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         span = (self.ledger.credit_max - self.ledger.credit_min) or 1.0
         normalised = (self.ledger.balance - self.ledger.credit_min) / span
         # steer towards the middle of the band (≈0.5)
+        # Positive balance = surplus, Negative balance = debt
         target = 0.5
-        deviation = target - normalised
+        deviation = normalised - target
         return max(-1.0, min(1.0, deviation * 0.6))
 
     def update_cumulative_emissions(

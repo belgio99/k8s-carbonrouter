@@ -28,8 +28,8 @@ class CreditLedger:
     - Balance: Cumulative difference between realized and target error (range: -1.0 to +1.0)
     - Velocity: Average rate of credit change (trend indicator)
 
-    Positive balance = Quality deficit accumulated (earned credit from low-precision use)
-    Negative balance = Quality surplus consumed (spent credit on high-precision use)
+    Positive balance = Quality surplus accumulated (earned credit from high-precision use)
+    Negative balance = Quality deficit consumed (spent credit on low-precision use)
     Zero balance = Neutral state (quality at target level)
 
     Attributes:
@@ -72,15 +72,15 @@ class CreditLedger:
         Example:
             If target_error=0.1 and realized_precision=0.95 (high-precision):
             - realized_error = 1 - 0.95 = 0.05
-            - delta = 0.05 - 0.1 = -0.05 (spending credit)
-            After 20 such requests: balance = -0.05 × 20 = -1.0 (max debt)
+            - delta = 0.1 - 0.05 = +0.05 (earning credit)
+            After 20 such requests: balance = +0.05 × 20 = +1.0 (max surplus)
 
             If target_error=0.1 and realized_precision=0.3 (low-precision):
             - realized_error = 1 - 0.3 = 0.7
-            - delta = 0.7 - 0.1 = +0.6 (earning credit back)
+            - delta = 0.1 - 0.7 = -0.6 (spending credit / accumulating debt)
         """
         realised_error = max(0.0, 1.0 - realised_precision)
-        delta = realised_error - self.target_error
+        delta = self.target_error - realised_error  # FIXED: Flipped sign for intuitive balance
         self._history.append(delta)
         self._balance = max(self.credit_min, min(self.credit_max, self._balance + delta))
         return self._balance
@@ -89,8 +89,8 @@ class CreditLedger:
         """
         Calculate average credit change rate over the sliding window.
 
-        Positive velocity = Using low-precision strategies (earning credits)
-        Negative velocity = Using high-precision strategies (spending credits)
+        Positive velocity = Using high-precision strategies (earning credits)
+        Negative velocity = Using low-precision strategies (spending credits)
         Zero velocity = Balanced quality at target level
 
         Returns:
