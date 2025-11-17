@@ -50,6 +50,10 @@ decision-engine:
       value: "100"
     - name: THROTTLE_INTENSITY_CEILING
       value: "300"
+    - name: TARGET_ERROR
+      value: "0.10"
+    - name: CREDIT_MAX
+      value: "1.5"
 buffer-service:
   podAnnotations:
     sidecar.istio.io/inject: "true"

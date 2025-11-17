@@ -29,9 +29,9 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
         trend = forecast.intensity_next - forecast.intensity_now
         adjustment = 0.0
         if trend > 0:
-            adjustment = -min(0.3, trend / max(forecast.intensity_now, 1e-6) * 0.5)
+            adjustment = -min(0.6, trend / max(forecast.intensity_now, 1e-6) * 1.0)
         elif trend < 0:
-            adjustment = min(0.3, abs(trend) / max(forecast.intensity_now, 1e-6) * 0.5)
+            adjustment = min(0.6, abs(trend) / max(forecast.intensity_now, 1e-6) * 1.0)
 
         # Identify baseline (highest precision) flavour, not highest-weighted flavour
         sorted_flavours = sorted(flavours_list, key=lambda f: f.precision, reverse=True)
