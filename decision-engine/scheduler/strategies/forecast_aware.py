@@ -37,10 +37,29 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
         sorted_flavours = sorted(flavours_list, key=lambda f: f.precision, reverse=True)
         baseline_name = sorted_flavours[0].name if sorted_flavours else None
 
-        weights = {
-            name: max(0.0, min(1.0, weight + adjustment if name != baseline_name else weight - adjustment))
-            for name, weight in base.weights.items()
-        }
+        weights = dict(base.weights)
+        if baseline_name is not None and len(weights) > 1:
+            baseline_weight = weights.get(baseline_name, 0.0)
+            non_baseline = 1.0 - baseline_weight
+            if adjustment > 0 and non_baseline > 0:
+                shift = min(adjustment, baseline_weight)
+                baseline_weight = max(0.05, baseline_weight - shift)
+                weights[baseline_name] = baseline_weight
+                scale = (non_baseline + shift) / non_baseline
+                for name in weights:
+                    if name == baseline_name:
+                        continue
+                    weights[name] = min(0.95, weights[name] * scale)
+            elif adjustment < 0:
+                reclaimable = non_baseline
+                shift = min(abs(adjustment), reclaimable)
+                for name in weights:
+                    if name == baseline_name:
+                        continue
+                    portion = weights[name] / reclaimable if reclaimable else 0.0
+                    weights[name] = max(0.02, weights[name] - shift * portion)
+                weights[baseline_name] = min(0.98, baseline_weight + shift)
+
         total = sum(weights.values()) or 1.0
         weights = {k: v / total for k, v in weights.items()}
 
@@ -53,6 +72,7 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
                 **base.diagnostics.fields,
                 "trend": trend,
                 "adjustment": adjustment,
+                "baseline_weight": weights.get(baseline_name) if baseline_name else None,
             }
         )
         return PolicyResult(weights, avg_precision, diagnostics)

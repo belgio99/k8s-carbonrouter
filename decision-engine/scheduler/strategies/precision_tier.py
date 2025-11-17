@@ -32,28 +32,36 @@ class PrecisionTierPolicy(SchedulerPolicy):
         }
 
         # Base allocations respecting ledger balance
-        # Positive balance (earned from low-precision) → reduce low-precision usage
-        # Negative balance (spent on high-precision) → allow more low-precision usage
         allowance = 0.0
         if self.ledger.credit_max > 0:
             allowance = max(0.0, min(1.0, 0.5 - self.ledger.balance / (2 * self.ledger.credit_max)))
 
+        tier_shares = {
+            "tier-1": max(0.25, 1.0 - allowance),
+            "tier-2": allowance * 0.45,
+            "tier-3": allowance * 0.55,
+        }
+
+        # Bias tier shares by the average carbon intensity of each tier.
+        tier_carbon_scores = {
+            tier: self._tier_carbon_factor(bucket)
+            for tier, bucket in tiers.items()
+        }
+        for tier in tier_shares:
+            tier_shares[tier] *= tier_carbon_scores[tier] or 0.0
+
+        total_share = sum(tier_shares.values()) or 1.0
+        tier_shares = {k: v / total_share for k, v in tier_shares.items()}
+
         weights: Dict[str, float] = {}
-        total_primary = len(tiers["tier-1"]) or 1
-        total_secondary = len(tiers["tier-2"]) or 1
-        total_third = len(tiers["tier-3"]) or 1
-
-        primary_share = max(0.3, 1.0 - allowance)
-        secondary_share = min(0.5, allowance * 0.6)
-        tertiary_share = max(0.0, allowance - secondary_share)
-
-        for tier, share, total in (
-            ("tier-1", primary_share, total_primary),
-            ("tier-2", secondary_share, total_secondary),
-            ("tier-3", tertiary_share, total_third),
-        ):
-            for flavour in tiers[tier] or []:
-                weights[flavour.name] = share / total
+        for tier, bucket in tiers.items():
+            share = tier_shares.get(tier, 0.0)
+            if not bucket or share <= 0:
+                continue
+            flavour_scores = [self._flavour_carbon_weight(f) for f in bucket]
+            score_sum = sum(flavour_scores) or len(bucket)
+            for flavour, score in zip(bucket, flavour_scores):
+                weights[flavour.name] = share * (score / score_sum)
 
         if not weights:
             # fallback to single flavour
@@ -69,9 +77,9 @@ class PrecisionTierPolicy(SchedulerPolicy):
         diagnostics = PolicyDiagnostics(
             {
                 "allowance": allowance,
-                "tier_1_share": primary_share,
-                "tier_2_share": secondary_share,
-                "tier_3_share": tertiary_share,
+                "tier_1_share": tier_shares.get("tier-1"),
+                "tier_2_share": tier_shares.get("tier-2"),
+                "tier_3_share": tier_shares.get("tier-3"),
             }
         )
         return PolicyResult(weights, avg_precision, diagnostics)
@@ -82,3 +90,17 @@ class PrecisionTierPolicy(SchedulerPolicy):
             if f.name == name:
                 return f.precision
         return 1.0
+
+    @staticmethod
+    def _tier_carbon_factor(flavours: list[FlavourProfile]) -> float:
+        if not flavours:
+            return 0.0
+        baseline = 150.0
+        avg = sum((f.carbon_intensity or baseline) for f in flavours) / len(flavours)
+        return baseline / max(25.0, avg)
+
+    @staticmethod
+    def _flavour_carbon_weight(flavour: FlavourProfile) -> float:
+        carbon = flavour.carbon_intensity or 150.0
+        precision_bias = 0.5 + 0.5 * flavour.precision
+        return max(1e-3, precision_bias * (150.0 / max(25.0, carbon)))

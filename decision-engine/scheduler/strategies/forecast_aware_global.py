@@ -90,15 +90,18 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # =====================================================================
         # Combine all adjustments
         # =====================================================================
+        credit_pressure = self._credit_pressure_adjustment()
+
         total_adjustment = (
             0.35 * carbon_adjustment +      # 35% weight on carbon trend
-            0.25 * demand_adjustment +      # 25% weight on demand forecast
-            0.25 * emissions_adjustment +   # 25% weight on emissions budget
-            0.15 * lookahead_adjustment     # 15% weight on extended forecast
+            0.20 * demand_adjustment +      # 20% weight on demand forecast
+            0.20 * emissions_adjustment +   # 20% weight on emissions budget
+            0.15 * lookahead_adjustment +   # 15% weight on extended forecast
+            0.10 * credit_pressure          # 10% guard-rail from ledger state
         )
         
         # Clamp total adjustment to reasonable bounds
-        total_adjustment = max(-0.5, min(0.5, total_adjustment))
+        total_adjustment = max(-0.8, min(0.8, total_adjustment))
         
         # Apply adjustment to weights
         weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list)
@@ -116,6 +119,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             "demand_adjustment": demand_adjustment,
             "emissions_adjustment": emissions_adjustment,
             "lookahead_adjustment": lookahead_adjustment,
+            "credit_pressure": credit_pressure,
             "total_adjustment": total_adjustment,
             "cumulative_carbon_gco2": self._cumulative_carbon,
             "evaluation_count": float(self._evaluation_count),
@@ -351,50 +355,37 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         weights = dict(base_weights)
         
         if adjustment > 0:  # Shift towards greener flavours
-            # Reduce baseline weight, increase others proportionally
             baseline_weight = weights.get(baseline_name, 0.0)
-            reduction = min(baseline_weight * adjustment * 0.8, baseline_weight - 0.1)
+            baseline_floor = 0.02
+            reduction = min(baseline_weight * (0.4 + adjustment), baseline_weight - baseline_floor)
             
             if reduction > 0:
-                weights[baseline_name] = max(0.1, baseline_weight - reduction)
-                
-                # Distribute reduction to greener flavours
+                weights[baseline_name] = max(baseline_floor, baseline_weight - reduction)
                 other_flavours = [f for f in sorted_flavours if f.name != baseline_name]
                 if other_flavours:
-                    # Weight by carbon score
                     scores = [
                         self._carbon_score(sorted_flavours[0], f) 
                         for f in other_flavours
                     ]
                     score_sum = sum(scores) or len(scores)
-                    
                     for f, score in zip(other_flavours, scores):
-                        weights[f.name] = weights.get(f.name, 0.0) + (
-                            reduction * (score / score_sum)
-                        )
+                        weights[f.name] = weights.get(f.name, 0.0) + reduction * (score / score_sum)
         
         else:  # adjustment < 0, shift towards baseline
-            # Increase baseline weight, reduce others proportionally
-            increase = abs(adjustment) * 0.5
-            
-            # Take weight from non-baseline flavours
             other_total = sum(
                 w for name, w in weights.items() if name != baseline_name
             )
-            
-            if other_total > 0.2:  # Enough weight to take from
-                reduction_factor = 1.0 - (increase / other_total)
-                reduction_factor = max(0.5, reduction_factor)
-                
+            if other_total > 0:
+                reduction_factor = max(0.2, 1.0 + adjustment)
                 reclaimed = 0.0
-                for name in weights:
-                    if name != baseline_name:
-                        old_weight = weights[name]
-                        new_weight = old_weight * reduction_factor
-                        weights[name] = max(0.05, new_weight)
-                        reclaimed += old_weight - weights[name]
-                
-                weights[baseline_name] = weights.get(baseline_name, 0.0) + reclaimed
+                for name in list(weights.keys()):
+                    if name == baseline_name:
+                        continue
+                    old_weight = weights[name]
+                    new_weight = max(0.01, old_weight * reduction_factor)
+                    reclaimed += old_weight - new_weight
+                    weights[name] = new_weight
+                weights[baseline_name] = min(0.98, weights.get(baseline_name, 0.0) + reclaimed)
         
         # Normalize weights
         total = sum(weights.values())
@@ -402,6 +393,14 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             weights = {k: v / total for k, v in weights.items()}
         
         return weights
+
+    def _credit_pressure_adjustment(self) -> float:
+        span = (self.ledger.credit_max - self.ledger.credit_min) or 1.0
+        normalised = (self.ledger.balance - self.ledger.credit_min) / span
+        # steer towards the middle of the band (≈0.5)
+        target = 0.5
+        deviation = target - normalised
+        return max(-1.0, min(1.0, deviation * 0.6))
 
     def update_cumulative_emissions(
         self,
