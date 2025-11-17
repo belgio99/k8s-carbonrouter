@@ -49,8 +49,8 @@ class CreditGreedyPolicy(SchedulerPolicy):
             carbon_ratio = (carbon_now - low_carbon) / span if span > 0 else 0.0
             carbon_ratio = max(0.0, min(1.0, carbon_ratio))
             # High carbon → allow more low-precision traffic, low carbon → stay conservative
-            # Increased range from 0.6-1.4 to 0.4-1.8 for stronger differentiation
-            carbon_multiplier = 0.4 + 1.4 * carbon_ratio
+            # Aggressive range 0.3-2.0 for strong reactive carbon-awareness (target: 20-25pp swing)
+            carbon_multiplier = 0.3 + 1.7 * carbon_ratio
 
         allowance = max(0.0, min(0.95, base_allowance * carbon_multiplier))
 
