@@ -170,18 +170,18 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative trend
         trend = (next_period - current) / current
 
-        # Strong positive trend (intensity rising) → conserve credit (reduce p100)
-        # Strong negative trend (intensity falling) → spend credit (increase p100)
+        # Strong positive trend (intensity rising) → SPEND quality NOW (increase p100)
+        # Strong negative trend (intensity falling) → SAVE quality for later (decrease p100)
         if trend > 0.2:  # Rising by >20%
-            return 0.8  # Strongly conserve (POSITIVE = reduce p100)
+            return -0.8  # Strongly spend NOW (NEGATIVE = increase p100)
         elif trend > 0.05:  # Rising by >5%
-            return 0.4  # Moderately conserve
-        elif trend < -0.2:  # Falling by >20%
-            return -0.8  # Strongly spend (NEGATIVE = increase p100)
-        elif trend < -0.05:  # Falling by >5%
             return -0.4  # Moderately spend
+        elif trend < -0.2:  # Falling by >20%
+            return 0.8  # Strongly save for later (POSITIVE = decrease p100)
+        elif trend < -0.05:  # Falling by >5%
+            return 0.4  # Moderately save
         else:
-            return -trend * 2.0  # Linear scaling for small changes (FLIPPED SIGN)
+            return trend * 2.0  # Linear scaling for small changes
 
     def _compute_demand_adjustment(
         self, 
