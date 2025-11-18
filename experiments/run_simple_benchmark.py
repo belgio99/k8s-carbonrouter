@@ -29,8 +29,8 @@ ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 # Test configuration
 TEST_DURATION_MINUTES = 10
 SAMPLE_INTERVAL_SECONDS = 5  # Match schedule evaluation interval for accurate carbon tracking
-LOCUST_USERS = 200
-LOCUST_SPAWN_RATE = 50
+LOCUST_USERS = 140  # Reduced from 200 (30% reduction to prevent cluster overload)
+LOCUST_SPAWN_RATE = 35  # Reduced proportionally from 50
 
 # Port-forward URLs
 ROUTER_URL = "http://127.0.0.1:18000"
