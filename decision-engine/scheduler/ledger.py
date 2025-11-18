@@ -36,12 +36,14 @@ class CreditLedger:
         target_error: Target quality error threshold (e.g., 0.1 = 10% error)
         credit_min: Minimum allowed credit balance (quality debt limit, typically -1.0)
         credit_max: Maximum allowed credit balance (quality surplus cap, typically +1.0)
+        credit_sensitivity: Multiplier for credit changes (lower = bigger tank, default 1.0)
         window_size: Number of recent requests for velocity calculation
     """
 
     target_error: float
     credit_min: float
     credit_max: float
+    credit_sensitivity: float
     window_size: int
 
     def __post_init__(self) -> None:
@@ -60,7 +62,7 @@ class CreditLedger:
 
         Calculates:
         1. Realized error from precision (error = 1 - precision)
-        2. Credit delta (realized_error - target_error)
+        2. Credit delta (realized_error - target_error) × credit_sensitivity
         3. Updates balance, clamped to [credit_min, credit_max] (typically -1.0 to +1.0)
 
         Args:
@@ -70,17 +72,17 @@ class CreditLedger:
             Updated credit balance
 
         Example:
-            If target_error=0.1 and realized_precision=0.95 (high-precision):
+            If target_error=0.15, credit_sensitivity=0.33, realized_precision=0.95:
             - realized_error = 1 - 0.95 = 0.05
-            - delta = 0.1 - 0.05 = +0.05 (earning credit)
-            After 20 such requests: balance = +0.05 × 20 = +1.0 (max surplus)
+            - delta = (0.15 - 0.05) × 0.33 = +0.033 (earning credit)
+            After 30 such requests: balance = +0.033 × 30 = +1.0 (max surplus)
 
-            If target_error=0.1 and realized_precision=0.3 (low-precision):
+            If target_error=0.15, credit_sensitivity=0.33, realized_precision=0.3:
             - realized_error = 1 - 0.3 = 0.7
-            - delta = 0.1 - 0.7 = -0.6 (spending credit / accumulating debt)
+            - delta = (0.15 - 0.7) × 0.33 = -0.182 (spending credit / accumulating debt)
         """
         realised_error = max(0.0, 1.0 - realised_precision)
-        delta = self.target_error - realised_error  # FIXED: Flipped sign for intuitive balance
+        delta = (self.target_error - realised_error) * self.credit_sensitivity
         self._history.append(delta)
         self._balance = max(self.credit_min, min(self.credit_max, self._balance + delta))
         return self._balance

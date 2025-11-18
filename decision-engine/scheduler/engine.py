@@ -268,6 +268,7 @@ class SchedulerEngine:
             target_error=self.config.target_error,
             credit_min=self.config.credit_min,
             credit_max=self.config.credit_max,
+            credit_sensitivity=self.config.credit_sensitivity,
             window_size=self.config.smoothing_window,
         )
         default_flavours = self._load_default_flavours()

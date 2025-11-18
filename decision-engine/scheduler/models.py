@@ -134,9 +134,10 @@ class SchedulerConfig:
     Can be overridden via API for specific TrafficSchedules.
     
     Attributes:
-        target_error: Target quality error threshold (0.0-1.0, default 0.1 = 10% error)
+        target_error: Target quality error threshold (0.0-1.0, default 0.15 = 15% error, 85% precision)
         credit_min: Minimum credit balance (quality debt limit, typically -1.0, negative = debt)
         credit_max: Maximum credit balance (quality surplus limit, typically +1.0, positive = surplus)
+        credit_sensitivity: Multiplier for credit changes (lower = bigger tank, default 0.33)
         smoothing_window: Time window for credit velocity smoothing (seconds)
         policy_name: Scheduling policy to use (e.g., "credit-greedy", "forecast-aware")
         valid_for: Schedule validity period (seconds)
@@ -149,9 +150,10 @@ class SchedulerConfig:
         throttle_intensity_ceiling: Carbon intensity ceiling for throttling (gCO2eq/kWh)
     """
 
-    target_error: float = 0.05  # Reduced from 0.15 to make credit tank effectively 3× larger
+    target_error: float = 0.15  # 15% error = 85% target precision
     credit_min: float = -1.0
     credit_max: float = 1.0
+    credit_sensitivity: float = 0.33  # Makes tank 3× bigger (smaller per-request impact)
     smoothing_window: int = 300  # seconds
     policy_name: str = "credit-greedy"
     valid_for: int = 60  # seconds per schedule publication
@@ -172,9 +174,10 @@ class SchedulerConfig:
             SchedulerConfig instance with values from environment
         """
         return cls(
-            target_error=float(os.getenv("TARGET_ERROR", "0.05")),
+            target_error=float(os.getenv("TARGET_ERROR", "0.15")),
             credit_min=float(os.getenv("CREDIT_MIN", "-1.0")),
             credit_max=float(os.getenv("CREDIT_MAX", "1.0")),
+            credit_sensitivity=float(os.getenv("CREDIT_SENSITIVITY", "0.33")),
             smoothing_window=int(os.getenv("CREDIT_WINDOW", "300")),
             policy_name=os.getenv("SCHEDULER_POLICY", "credit-greedy"),
             valid_for=int(os.getenv("SCHEDULE_VALID_FOR", "60")),
@@ -194,6 +197,7 @@ class SchedulerConfig:
             target_error=self.target_error,
             credit_min=self.credit_min,
             credit_max=self.credit_max,
+            credit_sensitivity=self.credit_sensitivity,
             smoothing_window=self.smoothing_window,
             policy_name=self.policy_name,
             valid_for=self.valid_for,
