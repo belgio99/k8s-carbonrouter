@@ -93,15 +93,15 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         credit_pressure = self._credit_pressure_adjustment()
 
         total_adjustment = (
-            0.15 * carbon_adjustment +      # 15% weight on short-term trend (reduced for stability)
-            0.15 * demand_adjustment +      # 15% weight on demand forecast
-            0.15 * emissions_adjustment +   # 15% weight on emissions budget
-            0.45 * lookahead_adjustment +   # 45% weight on extended forecast (PRIMARY factor!)
+            0.10 * carbon_adjustment +      # 10% weight on short-term trend
+            0.10 * demand_adjustment +      # 10% weight on demand forecast
+            0.10 * emissions_adjustment +   # 10% weight on emissions budget
+            0.60 * lookahead_adjustment +   # 60% weight on extended forecast (PRIMARY factor! Increased for stronger differentiation)
             0.10 * credit_pressure          # 10% guard-rail from ledger state
         )
 
         # Clamp total adjustment to reasonable bounds
-        total_adjustment = max(-0.8, min(0.8, total_adjustment))  # Reduced from ±1.2 to ±0.8 for smoothness
+        total_adjustment = max(-1.0, min(1.0, total_adjustment))  # Increased from ±0.8 to ±1.0 for stronger signal
         
         # Apply adjustment to weights
         weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list)
@@ -324,18 +324,18 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         trend_factor = math.log(future_ratio)
 
         # tanh for smooth S-curve response
-        # Scale by 2.0 to get reasonable range, max out at ±0.7
-        adjustment = -0.7 * math.tanh(trend_factor * 2.0)
+        # Scale by 2.0 to get reasonable range, max out at ±0.9 (increased for stronger signal)
+        adjustment = -0.9 * math.tanh(trend_factor * 2.0)
 
         # Additional factors: check for extreme min/max
         min_ratio = min_future / current
         max_ratio = max_future / current
 
-        # If there's an extreme opportunity or threat, slightly boost the signal
+        # If there's an extreme opportunity or threat, boost the signal (increased for stronger differentiation)
         if min_ratio < 0.7:  # Very clean period ahead
-            adjustment += -0.15  # Extra conserve
+            adjustment += -0.25  # Extra conserve (increased from -0.15)
         if max_ratio > 1.3:  # Very dirty period ahead
-            adjustment += 0.15   # Extra spend now
+            adjustment += 0.25   # Extra spend now (increased from 0.15)
 
         # Clamp to ±1.0
         return max(-1.0, min(1.0, adjustment))
@@ -377,7 +377,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         if adjustment > 0:  # Shift towards greener flavours
             baseline_weight = weights.get(baseline_name, 0.0)
             baseline_floor = 0.02
-            reduction = min(baseline_weight * (0.4 + adjustment), baseline_weight - baseline_floor)
+            reduction = min(baseline_weight * (0.6 + adjustment), baseline_weight - baseline_floor)  # Increased from 0.4 to 0.6
             
             if reduction > 0:
                 weights[baseline_name] = max(baseline_floor, baseline_weight - reduction)
@@ -396,7 +396,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
                 w for name, w in weights.items() if name != baseline_name
             )
             if other_total > 0:
-                reduction_factor = max(0.2, 1.0 + adjustment)
+                reduction_factor = max(0.3, 1.0 + adjustment)  # Increased floor from 0.2 to 0.3 for more aggressive shifts
                 reclaimed = 0.0
                 for name in list(weights.keys()):
                     if name == baseline_name:
