@@ -88,20 +88,23 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         lookahead_adjustment = self._compute_extended_lookahead_adjustment(forecast)
         
         # =====================================================================
-        # Combine all adjustments
+        # Combine all adjustments with AMPLIFIED weighting
         # =====================================================================
         credit_pressure = self._credit_pressure_adjustment()
 
+        # NEW WEIGHTS: Increase lookahead dominance and allow larger adjustments
+        # Individual adjustments can now return values OUTSIDE [-1, 1]
         total_adjustment = (
-            0.10 * carbon_adjustment +      # 10% weight on short-term trend
-            0.10 * demand_adjustment +      # 10% weight on demand forecast
-            0.10 * emissions_adjustment +   # 10% weight on emissions budget
-            0.60 * lookahead_adjustment +   # 60% weight on extended forecast (PRIMARY factor! Increased for stronger differentiation)
-            0.10 * credit_pressure          # 10% guard-rail from ledger state
+            0.15 * carbon_adjustment +      # 15% - immediate carbon trend response
+            0.10 * demand_adjustment +      # 10% - load management
+            0.10 * emissions_adjustment +   # 10% - budget tracking
+            0.55 * lookahead_adjustment +   # 55% - PRIMARY carbon-aware signal (extended forecast)
+            0.10 * credit_pressure          # 10% - quality guard-rail
         )
 
-        # Clamp total adjustment to reasonable bounds
-        total_adjustment = max(-1.0, min(1.0, total_adjustment))  # Increased from ±0.8 to ±1.0 for stronger signal
+        # WIDER clamp range to allow stronger signals through
+        # ±2.0 allows for much more aggressive carbon-aware routing decisions
+        total_adjustment = max(-2.0, min(2.0, total_adjustment))
         
         # Apply adjustment to weights
         weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list)
@@ -154,7 +157,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         Compute adjustment based on carbon intensity trend.
 
         Returns:
-            Adjustment factor in range [-1.0, +1.0]
+            Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
             Positive = reduce p100 (conserve quality, use greener flavours)
             Negative = increase p100 (spend quality, use baseline)
         """
@@ -170,60 +173,55 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative trend
         trend = (next_period - current) / current
 
-        # Smooth, gradual response to avoid oscillations
-        # Use hyperbolic tangent for smooth transitions
-        # tanh approaches ±1 asymptotically, preventing hard switches
-
-        # Scale trend to reasonable range (-3 to +3 for tanh)
-        scaled_trend = trend * 3.0
-
-        # tanh gives smooth S-curve response:
-        # - Small trends → small adjustments
-        # - Large trends → asymptotic approach to ±0.6 (not ±1.0 for stability)
+        # AMPLIFIED response for stronger signal
+        # 50% carbon increase → -2.0 adjustment (before weighting)
+        # 50% carbon decrease → +2.0 adjustment (before weighting)
         import math
-        adjustment = -0.6 * math.tanh(scaled_trend)
+        scaled_trend = trend * 8.0  # Increased from 3.0 for stronger response
+        adjustment = -1.5 * math.tanh(scaled_trend)  # Increased from -0.6 to -1.5
 
         # Interpretation:
         # - Positive trend (rising carbon) → negative adjustment → increase p100 (use quality now)
         # - Negative trend (falling carbon) → positive adjustment → decrease p100 (save for later)
 
-        return adjustment
+        return adjustment  # No clamping - let weighting handle it
 
     def _compute_demand_adjustment(
-        self, 
+        self,
         forecast: ForecastSnapshot
     ) -> float:
         """
         Compute adjustment based on demand forecast.
-        
+
         If demand is expected to spike, we should conserve credit now
         to handle the spike with higher precision later.
-        
+
         Returns:
-            Adjustment factor in range [-1.0, +1.0]
+            Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
         """
         if forecast.demand_now is None or forecast.demand_next is None:
             return 0.0
-        
+
         current_demand = forecast.demand_now
         next_demand = forecast.demand_next
-        
+
         if current_demand <= 0:
             return 0.0
-        
+
         # Calculate relative demand change
         demand_ratio = next_demand / current_demand
-        
-        if demand_ratio > 1.5:  # Demand spike expected (>50% increase)
-            return -0.6  # Strongly conserve credit for spike
-        elif demand_ratio > 1.2:  # Moderate increase expected
-            return -0.3  # Moderately conserve
-        elif demand_ratio < 0.7:  # Demand drop expected (>30% decrease)
-            return 0.4  # Can afford to spend credit
-        elif demand_ratio < 0.85:  # Slight decrease
-            return 0.2  # Slightly spend
-        else:
-            return 0.0  # Stable demand
+
+        # CONTINUOUS function instead of hard thresholds
+        # demand_ratio = 2.0 (100% spike) → -2.5 adjustment
+        # demand_ratio = 1.0 (stable) → 0.0 adjustment
+        # demand_ratio = 0.5 (50% drop) → +1.25 adjustment
+        import math
+        # Use tanh for smooth but amplified response
+        demand_change = demand_ratio - 1.0  # -0.5 to +1.0 typical range
+        scaled_change = demand_change * 5.0  # Scale up for stronger signal
+        adjustment = -2.0 * math.tanh(scaled_change)  # Amplified response
+
+        return adjustment  # No clamping
 
     def _compute_emissions_budget_adjustment(
         self,
@@ -236,7 +234,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         If we've been very clean, we have more budget to spend.
 
         Returns:
-            Adjustment factor in range [-1.0, +1.0]
+            Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
         """
         if self._evaluation_count < 10:  # Not enough data
             return 0.0
@@ -248,55 +246,54 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         avg_carbon_per_eval = self._cumulative_carbon / self._evaluation_count
 
         # Compare with current intensity (as a proxy for "expected" emissions)
-        # This is a heuristic: if we've been emitting more than current intensity,
-        # we should be more conservative
         current_intensity = forecast.intensity_now
 
-        if avg_carbon_per_eval > current_intensity * 1.2:
-            # We've been emitting significantly more than current rate
-            return 0.5  # Push towards greener flavours
-        elif avg_carbon_per_eval > current_intensity * 1.05:
-            return 0.2  # Slightly prefer greener
-        elif avg_carbon_per_eval < current_intensity * 0.8:
-            # We've been very clean, can afford higher precision
-            return -0.3
-        else:
-            return 0.0  # On track
+        # CONTINUOUS function instead of hard thresholds
+        # avg = 1.5× current → +1.5 adjustment (push greener)
+        # avg = 1.0× current → 0.0 adjustment (on track)
+        # avg = 0.7× current → -1.0 adjustment (can spend more)
+        ratio = avg_carbon_per_eval / current_intensity
+        import math
+        # Scale deviation from 1.0 for stronger signal
+        deviation = (ratio - 1.0) * 5.0  # Amplify deviations
+        adjustment = 1.5 * math.tanh(deviation)  # Amplified response
+
+        return adjustment  # No clamping
 
     def _compute_extended_lookahead_adjustment(
-        self, 
+        self,
         forecast: ForecastSnapshot
     ) -> float:
         """
         Compute adjustment based on extended forecast schedule.
-        
+
         Analyzes the full forecast schedule to identify upcoming
         very clean or very dirty periods.
-        
+
         Returns:
-            Adjustment factor in range [-1.0, +1.0]
+            Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
         """
         if not forecast.schedule or forecast.intensity_now is None:
             return 0.0
-        
+
         current = forecast.intensity_now
         if current <= 0:
             return 0.0
-        
+
         # Analyze next 3-6 forecast points (typically 1.5-3 hours ahead)
         lookahead_points = forecast.schedule[:6]
         if len(lookahead_points) < 2:
             return 0.0
-        
+
         # Calculate average intensity in lookahead window
         valid_forecasts = [
-            p.forecast for p in lookahead_points 
+            p.forecast for p in lookahead_points
             if p.forecast is not None and p.forecast > 0
         ]
-        
+
         if not valid_forecasts:
             return 0.0
-        
+
         avg_future = sum(valid_forecasts) / len(valid_forecasts)
 
         # Find min and max in lookahead
@@ -306,39 +303,36 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate trend using weighted average (emphasize near-term more)
         weighted_sum = 0.0
         weight_total = 0.0
-        for i, forecast in enumerate(valid_forecasts):
+        for i, forecast_val in enumerate(valid_forecasts):
             weight = 1.0 / (1.0 + i * 0.3)  # Exponential decay
-            weighted_sum += forecast * weight
+            weighted_sum += forecast_val * weight
             weight_total += weight
 
         weighted_avg = weighted_sum / weight_total if weight_total > 0 else avg_future
         future_ratio = weighted_avg / current
 
-        # Smooth response to future trend using tanh
+        # AMPLIFIED response to future trend
         # If future is cleaner → conserve quality (positive adjustment → decrease p100)
         # If future is dirtier → spend quality now (negative adjustment → increase p100)
         import math
 
         # Scale ratio to log space for better sensitivity around 1.0
-        # log(future/current) gives symmetric response to increases/decreases
         trend_factor = math.log(future_ratio)
 
-        # tanh for smooth S-curve response
-        # Scale by 2.0 to get reasonable range, max out at ±0.9 (increased for stronger signal)
-        adjustment = -0.9 * math.tanh(trend_factor * 2.0)
+        # AMPLIFIED tanh response - increased multipliers for stronger signal
+        adjustment = -2.0 * math.tanh(trend_factor * 3.0)  # Increased from -0.9 and 2.0
 
         # Additional factors: check for extreme min/max
         min_ratio = min_future / current
         max_ratio = max_future / current
 
-        # If there's an extreme opportunity or threat, boost the signal (increased for stronger differentiation)
+        # AMPLIFIED extreme opportunity/threat signals
         if min_ratio < 0.7:  # Very clean period ahead
-            adjustment += -0.25  # Extra conserve (increased from -0.15)
+            adjustment += -1.0  # Extra conserve (increased from -0.25)
         if max_ratio > 1.3:  # Very dirty period ahead
-            adjustment += 0.25   # Extra spend now (increased from 0.15)
+            adjustment += 1.0   # Extra spend now (increased from 0.25)
 
-        # Clamp to ±1.0
-        return max(-1.0, min(1.0, adjustment))
+        return adjustment  # No clamping - let weighting handle it
 
     def _apply_adjustment(
         self,
@@ -348,80 +342,101 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
     ) -> Dict[str, float]:
         """
         Apply adjustment to base weights.
-        
+
         Positive adjustment → shift towards greener (lower precision) flavours
         Negative adjustment → shift towards baseline (higher precision) flavours
-        
+
         Args:
             base_weights: Original weights from base strategy
-            adjustment: Adjustment factor in [-1.0, +1.0]
+            adjustment: Adjustment factor in [-2.0, +2.0] (WIDENED for stronger signals)
             flavours: List of available flavours
-            
+
         Returns:
             Adjusted weights dictionary
         """
-        if abs(adjustment) < 0.01:  # No significant adjustment
+        if abs(adjustment) < 0.02:  # No significant adjustment (threshold scaled for ±2.0 range)
             return base_weights
-        
+
         # Sort flavours by precision (descending)
         sorted_flavours = sorted(flavours, key=lambda f: f.precision, reverse=True)
-        
+
         if not sorted_flavours:
             return base_weights
-        
+
         baseline_name = sorted_flavours[0].name
-        
+
         # Create new weights
         weights = dict(base_weights)
-        
+
         if adjustment > 0:  # Shift towards greener flavours
             baseline_weight = weights.get(baseline_name, 0.0)
-            baseline_floor = 0.02
-            reduction = min(baseline_weight * (0.6 + adjustment), baseline_weight - baseline_floor)  # Increased from 0.4 to 0.6
-            
+            baseline_floor = 0.01  # Reduced from 0.02 for more aggressive shifts
+
+            # Scale reduction by adjustment magnitude (now in ±2.0 range)
+            # adjustment=2.0 → near-complete removal of baseline
+            # adjustment=0.5 → moderate shift
+            reduction_factor = min(1.0, adjustment / 2.0)  # Normalize to [0, 1]
+            reduction = min(baseline_weight * (0.5 + reduction_factor * 0.48), baseline_weight - baseline_floor)
+
             if reduction > 0:
                 weights[baseline_name] = max(baseline_floor, baseline_weight - reduction)
                 other_flavours = [f for f in sorted_flavours if f.name != baseline_name]
                 if other_flavours:
                     scores = [
-                        self._carbon_score(sorted_flavours[0], f) 
+                        self._carbon_score(sorted_flavours[0], f)
                         for f in other_flavours
                     ]
                     score_sum = sum(scores) or len(scores)
                     for f, score in zip(other_flavours, scores):
                         weights[f.name] = weights.get(f.name, 0.0) + reduction * (score / score_sum)
-        
+
         else:  # adjustment < 0, shift towards baseline
             other_total = sum(
                 w for name, w in weights.items() if name != baseline_name
             )
             if other_total > 0:
-                reduction_factor = max(0.3, 1.0 + adjustment)  # Increased floor from 0.2 to 0.3 for more aggressive shifts
+                # Scale reduction by adjustment magnitude (now in ±2.0 range)
+                # adjustment=-2.0 → near-complete shift to baseline
+                # adjustment=-0.5 → moderate shift
+                reduction_intensity = min(1.0, abs(adjustment) / 2.0)  # Normalize to [0, 1]
+                reduction_factor = max(0.1, 1.0 - reduction_intensity * 0.9)  # More aggressive floor
+
                 reclaimed = 0.0
                 for name in list(weights.keys()):
                     if name == baseline_name:
                         continue
                     old_weight = weights[name]
-                    new_weight = max(0.01, old_weight * reduction_factor)
+                    new_weight = max(0.005, old_weight * reduction_factor)  # Lower floor for stronger shifts
                     reclaimed += old_weight - new_weight
                     weights[name] = new_weight
-                weights[baseline_name] = min(0.98, weights.get(baseline_name, 0.0) + reclaimed)
-        
+                weights[baseline_name] = min(0.99, weights.get(baseline_name, 0.0) + reclaimed)
+
         # Normalize weights
         total = sum(weights.values())
         if total > 0:
             weights = {k: v / total for k, v in weights.items()}
-        
+
         return weights
 
     def _credit_pressure_adjustment(self) -> float:
+        """
+        Compute adjustment based on credit ledger balance.
+
+        Acts as quality guard-rail to prevent extreme debt/surplus.
+
+        Returns:
+            Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
+        """
         span = (self.ledger.credit_max - self.ledger.credit_min) or 1.0
         normalised = (self.ledger.balance - self.ledger.credit_min) / span
         # steer towards the middle of the band (≈0.5)
         # Positive balance = surplus, Negative balance = debt
         target = 0.5
         deviation = normalised - target
-        return max(-1.0, min(1.0, deviation * 0.6))
+        # AMPLIFIED response: Allow stronger guard-rail signals
+        # Deep debt (balance near -1.0) → large negative adjustment → spend quality to recover
+        # Large surplus (balance near +1.0) → large positive adjustment → use greener flavours
+        return deviation * 1.5  # Increased from 0.6 to 1.5, no clamping
 
     def update_cumulative_emissions(
         self,
