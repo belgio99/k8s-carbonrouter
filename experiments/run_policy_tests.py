@@ -136,7 +136,7 @@ def run_locust(host: str, users: int, duration: str, output_dir: Path) -> None:
             "-f", str(locustfile),
             "--headless",
             "-u", str(users),
-            "-r", "30",
+            "-r", "20",
             "-t", duration,
             "--host", host,
             "--csv", str(output_dir / "locust"),
@@ -191,7 +191,7 @@ def test_policy(policy: str, output_dir: Path) -> Dict[str, Any]:
     print("  ✓ Baseline collected")
     
     # 4. Run load test
-    run_locust("http://127.0.0.1:18000", users=100, duration="2m", output_dir=policy_dir)
+    run_locust("http://127.0.0.1:18000", users=67, duration="2m", output_dir=policy_dir)
     
     # 5. Collect final metrics
     print("  ⏳ Collecting final metrics...")

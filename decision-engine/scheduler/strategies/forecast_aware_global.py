@@ -93,15 +93,15 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         credit_pressure = self._credit_pressure_adjustment()
 
         total_adjustment = (
-            0.25 * carbon_adjustment +      # 25% weight on carbon trend (reduced from 35%)
-            0.25 * demand_adjustment +      # 25% weight on demand forecast (increased from 20%)
-            0.20 * emissions_adjustment +   # 20% weight on emissions budget
-            0.20 * lookahead_adjustment +   # 20% weight on extended forecast (increased from 15%)
+            0.15 * carbon_adjustment +      # 15% weight on short-term trend (reduced for stability)
+            0.15 * demand_adjustment +      # 15% weight on demand forecast
+            0.15 * emissions_adjustment +   # 15% weight on emissions budget
+            0.45 * lookahead_adjustment +   # 45% weight on extended forecast (PRIMARY factor!)
             0.10 * credit_pressure          # 10% guard-rail from ledger state
         )
 
         # Clamp total adjustment to reasonable bounds
-        total_adjustment = max(-1.2, min(1.2, total_adjustment))  # Increased from ±0.8 to ±1.2
+        total_adjustment = max(-0.8, min(0.8, total_adjustment))  # Reduced from ±1.2 to ±0.8 for smoothness
         
         # Apply adjustment to weights
         weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list)
@@ -170,18 +170,24 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative trend
         trend = (next_period - current) / current
 
-        # Strong positive trend (intensity rising) → SPEND quality NOW (increase p100)
-        # Strong negative trend (intensity falling) → SAVE quality for later (decrease p100)
-        if trend > 0.2:  # Rising by >20%
-            return -0.8  # Strongly spend NOW (NEGATIVE = increase p100)
-        elif trend > 0.05:  # Rising by >5%
-            return -0.4  # Moderately spend
-        elif trend < -0.2:  # Falling by >20%
-            return 0.8  # Strongly save for later (POSITIVE = decrease p100)
-        elif trend < -0.05:  # Falling by >5%
-            return 0.4  # Moderately save
-        else:
-            return trend * 2.0  # Linear scaling for small changes
+        # Smooth, gradual response to avoid oscillations
+        # Use hyperbolic tangent for smooth transitions
+        # tanh approaches ±1 asymptotically, preventing hard switches
+
+        # Scale trend to reasonable range (-3 to +3 for tanh)
+        scaled_trend = trend * 3.0
+
+        # tanh gives smooth S-curve response:
+        # - Small trends → small adjustments
+        # - Large trends → asymptotic approach to ±0.6 (not ±1.0 for stability)
+        import math
+        adjustment = -0.6 * math.tanh(scaled_trend)
+
+        # Interpretation:
+        # - Positive trend (rising carbon) → negative adjustment → increase p100 (use quality now)
+        # - Negative trend (falling carbon) → positive adjustment → decrease p100 (save for later)
+
+        return adjustment
 
     def _compute_demand_adjustment(
         self, 
@@ -292,33 +298,47 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             return 0.0
         
         avg_future = sum(valid_forecasts) / len(valid_forecasts)
-        
+
         # Find min and max in lookahead
         min_future = min(valid_forecasts)
         max_future = max(valid_forecasts)
-        
-        # Calculate overall trend
-        future_ratio = avg_future / current
-        
-        # Check for upcoming very clean period
-        if min_future < current * 0.6:  # Very clean period ahead
-            return -0.5  # Conserve credit for that clean period
-        
-        # Check for upcoming very dirty period  
-        if max_future > current * 1.4:  # Very dirty period ahead
-            return 0.6  # Spend credit now while it's cleaner
-        
-        # General trend
-        if future_ratio > 1.3:
-            return 0.4  # Future is much dirtier, spend now
-        elif future_ratio > 1.1:
-            return 0.2
-        elif future_ratio < 0.8:
-            return -0.3  # Future is much cleaner, conserve
-        elif future_ratio < 0.9:
-            return -0.15
-        else:
-            return 0.0
+
+        # Calculate trend using weighted average (emphasize near-term more)
+        weighted_sum = 0.0
+        weight_total = 0.0
+        for i, forecast in enumerate(valid_forecasts):
+            weight = 1.0 / (1.0 + i * 0.3)  # Exponential decay
+            weighted_sum += forecast * weight
+            weight_total += weight
+
+        weighted_avg = weighted_sum / weight_total if weight_total > 0 else avg_future
+        future_ratio = weighted_avg / current
+
+        # Smooth response to future trend using tanh
+        # If future is cleaner → conserve quality (positive adjustment → decrease p100)
+        # If future is dirtier → spend quality now (negative adjustment → increase p100)
+        import math
+
+        # Scale ratio to log space for better sensitivity around 1.0
+        # log(future/current) gives symmetric response to increases/decreases
+        trend_factor = math.log(future_ratio)
+
+        # tanh for smooth S-curve response
+        # Scale by 2.0 to get reasonable range, max out at ±0.7
+        adjustment = -0.7 * math.tanh(trend_factor * 2.0)
+
+        # Additional factors: check for extreme min/max
+        min_ratio = min_future / current
+        max_ratio = max_future / current
+
+        # If there's an extreme opportunity or threat, slightly boost the signal
+        if min_ratio < 0.7:  # Very clean period ahead
+            adjustment += -0.15  # Extra conserve
+        if max_ratio > 1.3:  # Very dirty period ahead
+            adjustment += 0.15   # Extra spend now
+
+        # Clamp to ±1.0
+        return max(-1.0, min(1.0, adjustment))
 
     def _apply_adjustment(
         self,

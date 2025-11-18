@@ -29,8 +29,8 @@ ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 # Test configuration
 TEST_DURATION_MINUTES = 10
 SAMPLE_INTERVAL_SECONDS = 5  # Match schedule evaluation interval for accurate carbon tracking
-LOCUST_USERS = 300
-LOCUST_SPAWN_RATE = 75
+LOCUST_USERS = 200
+LOCUST_SPAWN_RATE = 50
 
 # Port-forward URLs
 ROUTER_URL = "http://127.0.0.1:18000"
@@ -188,7 +188,7 @@ def reset_decision_engine() -> None:
 def reset_router() -> None:
     """
     Reset router by deleting the pod.
-    
+
     This clears any accumulated request counters and ensures the router
     starts with a clean slate.
     """
@@ -200,7 +200,7 @@ def reset_router() -> None:
             "-l", "app.kubernetes.io/component=router"
         ])
         print("  ✓ Router pod deleted")
-        
+
         # Wait for new pod to be ready
         print("  ⏳ Waiting for new router pod to be ready...")
         for attempt in range(30):
@@ -214,10 +214,45 @@ def reset_router() -> None:
                 time.sleep(3)
                 print("  ✓ Router is ready")
                 return
-        
+
         print("  ⚠️  Warning: Router pod did not become ready in time")
     except Exception as e:
         print(f"  ⚠️  Warning: Failed to reset router: {e}")
+
+
+def reset_operator() -> None:
+    """
+    Reset operator by deleting the pod.
+
+    This clears any cached TrafficSchedule validUntil timestamps, ensuring
+    the operator immediately reconciles after the decision engine restart.
+    """
+    print("  ⏳ Resetting operator...")
+    try:
+        # Delete the operator pod
+        run_cmd([
+            "kubectl", "delete", "pod", "-n", ENGINE_NAMESPACE,
+            "-l", "control-plane=controller-manager"
+        ])
+        print("  ✓ Operator pod deleted")
+
+        # Wait for new pod to be ready
+        print("  ⏳ Waiting for new operator pod to be ready...")
+        for attempt in range(30):
+            time.sleep(2)
+            result = run_cmd([
+                "kubectl", "get", "pods", "-n", ENGINE_NAMESPACE,
+                "-l", "control-plane=controller-manager",
+                "-o", "jsonpath={.items[0].status.phase}"
+            ])
+            if result.stdout.strip() == "Running":
+                time.sleep(3)
+                print("  ✓ Operator is ready")
+                return
+
+        print("  ⚠️  Warning: Operator pod did not become ready in time")
+    except Exception as e:
+        print(f"  ⚠️  Warning: Failed to reset operator: {e}")
 
 
 def wait_for_schedule() -> bool:
@@ -259,14 +294,14 @@ def wait_for_schedule() -> bool:
 def patch_policy(policy: str) -> None:
     """Update TrafficSchedule with new policy and fast update intervals."""
     # Configure for fast testing:
-    # - validFor: 10s = decision engine recalculates every ~8s (80% of 10s)
-    # - carbonCacheTTL: 15s = fetch fresh carbon data every 15s  
-    # This ensures we catch carbon changes every minute without overwhelming the system
+    # - validFor: 3s = short expiry forces operator to rapid-poll, catching updates within ~1s
+    # - carbonCacheTTL: 15s = fetch fresh carbon data every 15s
+    # Engine evaluates every 15s, operator catches updates via rapid polling after expiry
     patch = json.dumps({
         "spec": {
             "scheduler": {
                 "policy": policy,
-                "validFor": 10,        # Schedule refresh every ~24s
+                "validFor": 3,         # Short expiry for low-lag updates
                 "carbonCacheTTL": 15   # Carbon data refreshed every 15s
             }
         }
@@ -275,7 +310,7 @@ def patch_policy(policy: str) -> None:
         "kubectl", "patch", "trafficschedule", SCHEDULE_NAME,
         "-n", NAMESPACE, "--type=merge", f"-p={patch}"
     ])
-    print(f"  ✓ Patched policy to {policy} (validFor=10s, carbonCacheTTL=15s)")
+    print(f"  ✓ Patched policy to {policy} (validFor=3s, carbonCacheTTL=15s)")
     print("  ⏳ Waiting 30s for decision engine to stabilize...")
     time.sleep(30)
 
@@ -382,25 +417,28 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     # RESET PHASE: Ensure clean, repeatable test environment
     # ═══════════════════════════════════════════════════════════════════
     print("\n🔄 Resetting test environment for repeatability...")
-    
+
     # 1. Reset carbon API to start from beginning of pattern
     reset_carbon_pattern()
-    
+
     # 2. Reset decision engine (clears credit balance and cache)
     reset_decision_engine()
 
-    # 3. Reset router (clears request counters)
+    # 3. Reset operator (clears cached validUntil timestamps)
+    reset_operator()
+
+    # 4. Reset router (clears request counters)
     # TEMPORARILY DISABLED - port-forwards not stable enough after pod resets
     # reset_router()
 
-    # 4. Ensure port-forwards are working (they break when pods restart)
+    # 5. Ensure port-forwards are working (they break when pods restart)
     ensure_port_forwards()
-    
-    # 5. Apply policy with fast update intervals
+
+    # 6. Apply policy with fast update intervals
     print("\n⚙️  Configuring policy...")
     patch_policy(policy)
-    
-    # 6. Wait for decision engine to compute initial schedule
+
+    # 7. Wait for decision engine to compute initial schedule
     if not wait_for_schedule():
         print("  ⚠️  Warning: Proceeding without confirmed schedule")
     
