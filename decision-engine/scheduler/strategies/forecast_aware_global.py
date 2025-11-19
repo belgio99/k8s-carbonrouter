@@ -315,6 +315,10 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         Analyzes the full forecast schedule to identify upcoming
         very clean or very dirty periods.
 
+        IMPORTANT: Lookahead is DISABLED when carbon is already good (< 100 gCO2/kWh).
+        This prevents the backwards "save for later" logic from interfering during
+        clean periods. When carbon is already low, just use the quality!
+
         Returns:
             Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
         """
@@ -323,6 +327,15 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
 
         current = forecast.intensity_now
         if current <= 0:
+            return 0.0
+
+        # Disable lookahead when carbon is already good (< 100 gCO2/kWh)
+        # During clean periods, we should USE quality, not try to "save for later"
+        if current < 100.0:
+            _LOGGER.debug(
+                "Lookahead disabled: carbon is already good (%.1f < 100 gCO2/kWh)",
+                current
+            )
             return 0.0
 
         # Analyze next 3-6 forecast points (typically 1.5-3 hours ahead)

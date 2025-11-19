@@ -398,9 +398,15 @@ def start_locust_background(policy_dir: Path) -> subprocess.Popen:
         "--host", ROUTER_URL
     ]
     # Redirect stderr to suppress Locust TTY warnings when running in background
+    env = {
+        **subprocess.os.environ,
+        "BENCHMARK_PATH": "/avg",
+        "TIME_LIMIT": str(TEST_DURATION_MINUTES * 60),  # Convert minutes to seconds
+        "MAX_USERS": str(LOCUST_USERS)
+    }
     return subprocess.Popen(
         cmd,
-        env={**subprocess.os.environ, "BENCHMARK_PATH": "/avg"},
+        env=env,
         stderr=subprocess.DEVNULL
     )
 
