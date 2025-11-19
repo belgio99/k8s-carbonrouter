@@ -40,7 +40,17 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         super().__init__(*args, **kwargs)
         self._cumulative_carbon: float = 0.0
         self._evaluation_count: int = 0  # Count of evaluations, not individual requests
-        
+        self.demand_pattern: Optional[List[int]] = None
+        try:
+            import json
+            # The decision engine runs from the root of the project
+            with open("experiments/demand_scenario.json", encoding="utf-8") as f:
+                scenario = json.load(f)
+                self.demand_pattern = scenario["pattern"]
+                _LOGGER.info("Loaded demand pattern with %d points from demand_scenario.json", len(self.demand_pattern))
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            _LOGGER.warning("demand_scenario.json not found or invalid: %s. Demand forecasting will not work correctly.", e)
+
     def evaluate(
         self,
         flavours: list[FlavourProfile],
@@ -68,6 +78,17 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             return base
 
         # =====================================================================
+        # Pre-computation: Demand Forecast Override
+        # =====================================================================
+        if self.demand_pattern:
+            num_points = len(self.demand_pattern)
+            if num_points > 0:
+                current_index = self._evaluation_count % num_points
+                next_index = (self._evaluation_count + 1) % num_points
+                forecast.demand_now = float(self.demand_pattern[current_index])
+                forecast.demand_next = float(self.demand_pattern[next_index])
+
+        # =====================================================================
         # Factor 1: Carbon Intensity Trend Analysis
         # =====================================================================
         carbon_adjustment = self._compute_carbon_trend_adjustment(forecast)
@@ -88,18 +109,21 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         lookahead_adjustment = self._compute_extended_lookahead_adjustment(forecast)
         
         # =====================================================================
-        # Combine all adjustments with AMPLIFIED weighting
+        # Combine all adjustments with BALANCED weighting
         # =====================================================================
         credit_pressure = self._credit_pressure_adjustment()
 
-        # NEW WEIGHTS: Increase lookahead dominance and allow larger adjustments
-        # Individual adjustments can now return values OUTSIDE [-1, 1]
+        # BALANCED WEIGHTS: Reduce lookahead dominance, boost workload/constraints
+        # Distribution:
+        #   - Forward-looking (carbon signals): 50% (carbon 15% + lookahead 35%)
+        #   - Workload awareness (demand): 20%
+        #   - Backward-looking (constraints): 30% (emissions 10% + credit 20%)
         total_adjustment = (
             0.15 * carbon_adjustment +      # 15% - immediate carbon trend response
-            0.10 * demand_adjustment +      # 10% - load management
-            0.10 * emissions_adjustment +   # 10% - budget tracking
-            0.55 * lookahead_adjustment +   # 55% - PRIMARY carbon-aware signal (extended forecast)
-            0.10 * credit_pressure          # 10% - quality guard-rail
+            0.20 * demand_adjustment +      # 20% - workload awareness (2x boost)
+            0.10 * emissions_adjustment +   # 10% - carbon budget accountability
+            0.35 * lookahead_adjustment +   # 35% - strategic carbon forecast (reduced from 55%)
+            0.20 * credit_pressure          # 20% - quality constraint (2x boost)
         )
 
         # WIDER clamp range to allow stronger signals through
@@ -130,12 +154,16 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
                 self._cumulative_carbon / self._evaluation_count
                 if self._evaluation_count > 0 else 0.0
             ),
+            "demand_now": forecast.demand_now if forecast.demand_now is not None else 0.0,
+            "demand_next": forecast.demand_next if forecast.demand_next is not None else 0.0,
         })
         
         _LOGGER.debug(
-            "ForecastAwareGlobal: adj=%.3f (carbon=%.3f, demand=%.3f, emissions=%.3f, lookahead=%.3f)",
+            "ForecastAwareGlobal: adj=%.3f (carbon=%.3f, demand=%.3f, emissions=%.3f, lookahead=%.3f) | demand_now=%.1f demand_next=%.1f",
             total_adjustment, carbon_adjustment, demand_adjustment,
-            emissions_adjustment, lookahead_adjustment
+            emissions_adjustment, lookahead_adjustment,
+            forecast.demand_now if forecast.demand_now is not None else 0.0,
+            forecast.demand_next if forecast.demand_next is not None else 0.0
         )
 
         # Update cumulative emissions tracking based on commanded weights
