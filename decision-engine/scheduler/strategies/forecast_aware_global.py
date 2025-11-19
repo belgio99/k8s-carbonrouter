@@ -249,7 +249,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Normalize carbon intensity (assume 40-300 gCO2/kWh range)
         carbon_min = 40.0
         carbon_max = 300.0
-        carbon_normalized = (forecast.carbon_now - carbon_min) / (carbon_max - carbon_min)
+        carbon_normalized = (forecast.intensity_now - carbon_min) / (carbon_max - carbon_min)
         carbon_normalized = max(0.0, min(1.0, carbon_normalized))  # Clamp to 0-1
 
         # CARBON-AWARE LOGIC:
