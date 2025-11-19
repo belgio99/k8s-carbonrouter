@@ -9,6 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY decision-engine.py ./
 COPY scheduler ./scheduler
 
+# Copy demand scenario for forecast-aware-global strategy
+COPY ../experiments/demand_scenario.json ./demand_scenario.json
+
 EXPOSE 5001
 
 CMD ["python", "decision-engine.py"]

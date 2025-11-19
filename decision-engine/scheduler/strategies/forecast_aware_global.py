@@ -43,8 +43,8 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         self.demand_pattern: Optional[List[int]] = None
         try:
             import json
-            # The decision engine runs from the root of the project
-            with open("experiments/demand_scenario.json", encoding="utf-8") as f:
+            # Load from container root (copied by Dockerfile)
+            with open("demand_scenario.json", encoding="utf-8") as f:
                 scenario = json.load(f)
                 self.demand_pattern = scenario["pattern"]
                 _LOGGER.info("Loaded demand pattern with %d points from demand_scenario.json", len(self.demand_pattern))
