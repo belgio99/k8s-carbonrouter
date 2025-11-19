@@ -219,10 +219,12 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         forecast: ForecastSnapshot
     ) -> float:
         """
-        Compute adjustment based on demand forecast.
+        Compute CARBON-AWARE adjustment based on demand forecast.
 
-        If demand is expected to spike, we should conserve credit now
-        to handle the spike with higher precision later.
+        Key insight: Rising demand should be handled differently based on
+        current carbon intensity:
+        - Low carbon + rising demand = OPPORTUNISTIC (serve more NOW)
+        - High carbon + rising demand = DEFENSIVE (reduce quality NOW)
 
         Returns:
             Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
@@ -239,15 +241,30 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative demand change
         demand_ratio = next_demand / current_demand
 
-        # CONTINUOUS function instead of hard thresholds
-        # demand_ratio = 2.0 (100% spike) → -2.5 adjustment
-        # demand_ratio = 1.0 (stable) → 0.0 adjustment
-        # demand_ratio = 0.5 (50% drop) → +1.25 adjustment
         import math
-        # Use tanh for smooth but amplified response
         demand_change = demand_ratio - 1.0  # -0.5 to +1.0 typical range
         scaled_change = demand_change * 5.0  # Scale up for stronger signal
-        adjustment = -2.0 * math.tanh(scaled_change)  # Amplified response
+        base_adjustment = math.tanh(scaled_change)  # -1.0 to +1.0
+
+        # Normalize carbon intensity (assume 40-300 gCO2/kWh range)
+        carbon_min = 40.0
+        carbon_max = 300.0
+        carbon_normalized = (forecast.carbon_now - carbon_min) / (carbon_max - carbon_min)
+        carbon_normalized = max(0.0, min(1.0, carbon_normalized))  # Clamp to 0-1
+
+        # CARBON-AWARE LOGIC:
+        if demand_ratio > 1.0:  # Demand is RISING
+            if carbon_normalized < 0.5:  # LOW carbon NOW (< 170 gCO2/kWh)
+                # OPPORTUNISTIC: Serve MORE now while carbon is cheap
+                # This exploits low-carbon windows before demand peaks
+                adjustment = +2.0 * base_adjustment  # Inverted sign: rising demand → +adjustment
+            else:  # HIGH carbon NOW (≥ 170 gCO2/kWh)
+                # DEFENSIVE: Reduce quality NOW, save credit for later
+                adjustment = -2.0 * base_adjustment  # Original sign: rising demand → -adjustment
+        else:  # Demand is FALLING or STABLE
+            # Always take advantage of demand drop to increase quality
+            # (negative base_adjustment becomes positive after negation)
+            adjustment = -2.0 * base_adjustment
 
         return adjustment  # No clamping
 
