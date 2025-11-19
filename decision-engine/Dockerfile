@@ -10,7 +10,7 @@ COPY decision-engine.py ./
 COPY scheduler ./scheduler
 
 # Copy demand scenario for forecast-aware-global strategy
-COPY ../experiments/demand_scenario.json ./demand_scenario.json
+COPY demand_scenario.json ./demand_scenario.json
 
 EXPOSE 5001
 

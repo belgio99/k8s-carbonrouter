@@ -1,0 +1,22 @@
+{
+  "scenario": "demand-follows-carbon-with-lag",
+  "description": "Demand pattern that correlates with carbon scenario: rises to 60% during morning, peaks at 100% when carbon peaks, falls slower than carbon. 40 points matching carbon_scenario.json exactly.",
+  "repeat": true,
+  "pattern": [
+    30, 35, 40, 45, 50, 53, 56, 60,
+    65, 70, 77, 85, 93,
+    100, 100, 98, 95, 92, 88, 84,
+    79, 73, 66, 58, 50,
+    45, 43, 42, 43,
+    45, 50, 56, 63, 71,
+    78, 85, 92, 97, 100, 100
+  ],
+  "explanation": {
+    "points_0_7": "Morning good carbon (40-80 gCO2): Demand rises slowly 30%→60%",
+    "points_8_12": "Carbon degrading (120-280): Demand rises faster 65%→93%, trying to use capacity before peak",
+    "points_13_14": "Carbon peak (300): Demand also at 100% maximum",
+    "points_15_24": "Carbon falling (290-60): Demand falls slower than carbon (lagging), 100%→50%",
+    "points_25_28": "Stable low carbon (50-55): Demand stays low 45%→43%",
+    "points_29_39": "Carbon rising again (60-300): Demand rises with it 45%→100%"
+  }
+}
