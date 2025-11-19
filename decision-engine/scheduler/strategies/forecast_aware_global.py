@@ -201,12 +201,12 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative trend
         trend = (next_period - current) / current
 
-        # AMPLIFIED response for stronger signal
-        # 50% carbon increase → -2.0 adjustment (before weighting)
-        # 50% carbon decrease → +2.0 adjustment (before weighting)
+        # MODERATE response for gentle nudges
+        # 50% carbon increase → ~-0.8 adjustment (before weighting)
+        # 50% carbon decrease → ~+0.8 adjustment (before weighting)
         import math
-        scaled_trend = trend * 8.0  # Increased from 3.0 for stronger response
-        adjustment = -1.5 * math.tanh(scaled_trend)  # Increased from -0.6 to -1.5
+        scaled_trend = trend * 4.0  # Reduced from 8.0 for gentler response
+        adjustment = -0.8 * math.tanh(scaled_trend)  # Reduced from -1.5 to -0.8
 
         # Interpretation:
         # - Positive trend (rising carbon) → negative adjustment → increase p100 (use quality now)
@@ -315,10 +315,6 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         Analyzes the full forecast schedule to identify upcoming
         very clean or very dirty periods.
 
-        IMPORTANT: Lookahead is DISABLED when carbon is already good (< 100 gCO2/kWh).
-        This prevents the backwards "save for later" logic from interfering during
-        clean periods. When carbon is already low, just use the quality!
-
         Returns:
             Adjustment factor (NO PRE-CLAMPING - can exceed ±1.0)
         """
@@ -327,15 +323,6 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
 
         current = forecast.intensity_now
         if current <= 0:
-            return 0.0
-
-        # Disable lookahead when carbon is already good (< 100 gCO2/kWh)
-        # During clean periods, we should USE quality, not try to "save for later"
-        if current < 100.0:
-            _LOGGER.debug(
-                "Lookahead disabled: carbon is already good (%.1f < 100 gCO2/kWh)",
-                current
-            )
             return 0.0
 
         # Analyze next 3-6 forecast points (typically 1.5-3 hours ahead)
@@ -377,18 +364,19 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Scale ratio to log space for better sensitivity around 1.0
         trend_factor = math.log(future_ratio)
 
-        # AMPLIFIED tanh response - increased multipliers for stronger signal
-        adjustment = -2.0 * math.tanh(trend_factor * 3.0)  # Increased from -0.9 and 2.0
+        # GENTLE tanh response for subtle nudges (not dramatic swings)
+        # Reduced multipliers: allows 5-10% weight adjustments instead of 40-50%
+        adjustment = -0.5 * math.tanh(trend_factor * 1.5)
 
         # Additional factors: check for extreme min/max
         min_ratio = min_future / current
         max_ratio = max_future / current
 
-        # AMPLIFIED extreme opportunity/threat signals
+        # Gentle extreme opportunity/threat signals
         if min_ratio < 0.7:  # Very clean period ahead
-            adjustment += -1.0  # Extra conserve (increased from -0.25)
+            adjustment += -0.3  # Extra conserve (gentle nudge)
         if max_ratio > 1.3:  # Very dirty period ahead
-            adjustment += 1.0   # Extra spend now (increased from 0.25)
+            adjustment += 0.3   # Extra spend now (gentle nudge)
 
         return adjustment  # No clamping - let weighting handle it
 

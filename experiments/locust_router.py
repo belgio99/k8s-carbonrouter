@@ -17,6 +17,8 @@ Configuration knobs (via env vars):
 * `BENCHMARK_URGENT_RATIO` – probability (0–1) of tagging a request as urgent
   via `x-urgent: true`.
 * `BENCHMARK_TIMEOUT` – request timeout in seconds (default 10).
+* `MAX_USERS` - Maximum number of concurrent users (default 100).
+* `TIME_LIMIT` - The total duration of the load test shape in seconds (default 3600).
 """
 
 from __future__ import annotations
@@ -27,8 +29,11 @@ import random
 from typing import Any, Dict
 
 from locust import HttpUser, between, task  # type: ignore
+from locust.shape import LoadTestShape
 
 DEFAULT_NUMBERS = [1, 2, 3, 50, 500, 1000]
+MAX_USERS = int(os.getenv("MAX_USERS", "100"))
+TIME_LIMIT = int(os.getenv("TIME_LIMIT", "3600"))
 
 
 def _load_payload() -> Dict[str, Any]:
@@ -68,6 +73,44 @@ REQUEST_TIMEOUT = float(os.getenv("BENCHMARK_TIMEOUT", "10"))
 BENCHMARK_PATH = os.getenv("BENCHMARK_PATH", "/avg")
 WAIT_MIN = float(os.getenv("BENCHMARK_WAIT_MIN", "0.05"))
 WAIT_MAX = float(os.getenv("BENCHMARK_WAIT_MAX", "0.15"))
+
+
+class DemandScenarioLoadShape(LoadTestShape):
+    """
+    A custom load shape that simulates a demand pattern from a JSON file.
+    """
+    
+    demand_pattern = None
+    
+    def __init__(self):
+        super().__init__()
+        try:
+            with open("demand_scenario.json") as f:
+                scenario = json.load(f)
+                self.demand_pattern = scenario["pattern"]
+        except FileNotFoundError:
+            print("demand_scenario.json not found. Using a flat 100% demand.")
+            self.demand_pattern = [100] * 40
+        self.spawn_rate = 10
+
+    def tick(self):
+        run_time = self.get_run_time()
+
+        if run_time > TIME_LIMIT:
+            return None
+
+        if not self.demand_pattern:
+            return (0, self.spawn_rate)
+            
+        step_duration = TIME_LIMIT / len(self.demand_pattern)
+        current_step = int(run_time / step_duration)
+        if current_step >= len(self.demand_pattern):
+            current_step = len(self.demand_pattern) - 1
+
+        demand_percentage = self.demand_pattern[current_step]
+        user_count = int((demand_percentage / 100) * MAX_USERS)
+
+        return (user_count, self.spawn_rate)
 
 
 class RouterBenchmarkUser(HttpUser):
