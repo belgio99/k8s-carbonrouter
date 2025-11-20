@@ -8,6 +8,7 @@ Available strategies:
 - ForecastAwarePolicy: Adjust allowance based on carbon intensity trends
 - PrecisionTierPolicy: Maintain target average precision by tiering flavours
 - ForecastAwareGlobalPolicy: Advanced strategy with global optimization using all signals
+- ForecastAwareGlobalNoThrottlePolicy: Same as ForecastAwareGlobalPolicy but without throttling
 - P100Policy: Always push 100% to the highest precision flavour
 - RoundRobinPolicy: Split traffic evenly between all flavours
 - RandomPolicy: Use random weights at every push
@@ -23,6 +24,7 @@ from .base import SchedulerPolicy
 from .credit_greedy import CreditGreedyPolicy
 from .forecast_aware import ForecastAwarePolicy
 from .forecast_aware_global import ForecastAwareGlobalPolicy
+from .forecast_aware_global_no_throttle import ForecastAwareGlobalNoThrottlePolicy
 from .p100 import P100Policy
 from .precision_tier import PrecisionTierPolicy
 from .random import RandomPolicy
@@ -33,6 +35,7 @@ __all__ = [
     "CreditGreedyPolicy",
     "ForecastAwarePolicy",
     "ForecastAwareGlobalPolicy",
+    "ForecastAwareGlobalNoThrottlePolicy",
     "P100Policy",
     "PrecisionTierPolicy",
     "RandomPolicy",
