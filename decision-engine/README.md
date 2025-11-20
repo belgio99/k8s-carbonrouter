@@ -40,7 +40,7 @@ flavour weights, diagnostics, processing throttle, and credit statistics.
 | `CREDIT_MIN` | `-1.0` | Lower bound for the credit ledger (quality debt limit). |
 | `CREDIT_MAX` | `1.0` | Upper bound for the credit ledger (quality surplus cap). |
 | `CREDIT_WINDOW` | `300` | Smoothing window (seconds) for the credit ledger. |
-| `SCHEDULER_POLICY` | `credit-greedy` | Active policy (`credit-greedy`, `forecast-aware`, `precision-tier`). |
+| `SCHEDULER_POLICY` | `credit-greedy` | Active policy (`credit-greedy`, `forecast-aware`, `forecast-aware-global`). |
 | `SCHEDULE_VALID_FOR` | `60` | Duration (seconds) a schedule remains valid. |
 | `STRATEGY_DISCOVERY_INTERVAL` | `60` | Interval between strategy refreshes. |
 | `CARBON_API_TARGET` | `national` | Forecast provider scope (depends on adapter implementation). |

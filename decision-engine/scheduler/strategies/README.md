@@ -24,15 +24,7 @@ Each strategy is implemented in a separate file for modularity and easy extensio
   - Adjusts traffic distribution proactively based on predicted trends
   - Reduces precision when carbon intensity is expected to increase
 
-### 3. Precision-Tier (`precision_tier.py`)
-- **Name**: `precision-tier`
-- **Description**: Maintains target average precision by organizing flavours into tiers
-- **Key Features**:
-  - Groups flavours into three precision tiers
-  - Allocates traffic proportionally across tiers
-  - Respects credit balance constraints
-
-### 4. Forecast-Aware-Global (`forecast_aware_global.py`) ⭐ **ADVANCED**
+### 3. Forecast-Aware-Global (`forecast_aware_global.py`) ⭐ **ADVANCED**
 
 - **Name**: `forecast-aware-global`
 - **Description**: Most comprehensive strategy with global optimization using all available signals

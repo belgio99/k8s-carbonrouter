@@ -11,9 +11,6 @@ python3 run_temporal_benchmark.py --policy forecast-aware
 
 # Test forecast-aware-global only
 python3 run_temporal_benchmark.py --policy forecast-aware-global
-
-# Test precision-tier only
-python3 run_temporal_benchmark.py --policy precision-tier
 ```
 
 ## Multiple Policies
@@ -22,11 +19,11 @@ python3 run_temporal_benchmark.py --policy precision-tier
 # Test two policies (20 minutes)
 python3 run_temporal_benchmark.py --policy credit-greedy --policy forecast-aware
 
-# Test three policies (30 minutes)
-python3 run_temporal_benchmark.py --policy credit-greedy --policy forecast-aware --policy precision-tier
+# Test all three carbon-aware policies (30 minutes)
+python3 run_temporal_benchmark.py --policy credit-greedy --policy forecast-aware --policy forecast-aware-global
 ```
 
-## All Policies (40 minutes)
+## All Policies (30 minutes)
 
 ```bash
 python3 run_temporal_benchmark.py
@@ -73,7 +70,7 @@ python3 run_temporal_benchmark.py --policy credit-greedy
 # Option B: Multiple policies (20 min)
 python3 run_temporal_benchmark.py --policy credit-greedy --policy forecast-aware
 
-# Option C: All policies (40 min)
+# Option C: All policies (30 min)
 python3 run_temporal_benchmark.py
 ```
 
@@ -158,5 +155,5 @@ kubectl rollout status deployment/carbonrouter-decision-engine -n carbonrouter-s
 | `--policy credit-greedy` | 10 min | Single policy test |
 | `--policy X --policy Y` | 20 min | Two policies |
 | `--policy X --policy Y --policy Z` | 30 min | Three policies |
-| No arguments (all 4) | 40 min | Complete benchmark |
+| No arguments (all 3) | 30 min | Complete benchmark |
 | `plot_results.py` | ~30 sec | Generate all graphs |

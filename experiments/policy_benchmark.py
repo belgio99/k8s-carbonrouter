@@ -46,7 +46,6 @@ DEFAULT_POLICIES = [
     "credit-greedy",
     "forecast-aware",
     "forecast-aware-global",
-    "precision-tier",
 ]
 
 

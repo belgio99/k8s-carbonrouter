@@ -31,14 +31,12 @@ POLICY_COLORS = {
     "credit-greedy": "#2E86AB",
     "forecast-aware": "#A23B72",
     "forecast-aware-global": "#F18F01",
-    "precision-tier": "#C73E1D",
 }
 
 POLICY_LABELS = {
     "credit-greedy": "Credit Greedy",
     "forecast-aware": "Forecast Aware",
     "forecast-aware-global": "Forecast Aware Global",
-    "precision-tier": "Precision Tier",
 }
 
 
