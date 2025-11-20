@@ -75,14 +75,14 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         carbon_adjustment = self._compute_carbon_trend_adjustment(forecast)
         
         # =====================================================================
-        # Factor 2: Demand Forecast Analysis (Disabled to avoid nerfing)
+        # Factor 2: Demand Forecast Analysis
         # =====================================================================
-        # demand_adjustment = self._compute_demand_adjustment(forecast)
+        demand_adjustment = self._compute_demand_adjustment(forecast)
         
         # =====================================================================
-        # Factor 3: Cumulative Emissions Budget (Disabled to avoid nerfing)
+        # Factor 3: Cumulative Emissions Budget
         # =====================================================================
-        # emissions_adjustment = self._compute_emissions_budget_adjustment(forecast)
+        emissions_adjustment = self._compute_emissions_budget_adjustment(forecast)
         
         # =====================================================================
         # Factor 4: Extended Look-Ahead
@@ -96,19 +96,20 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         carbon_zone = self._carbon_zone(forecast.intensity_now)
         zone_adjustment = self._zone_adjustment(carbon_zone, forecast)
 
-        # SIMPLIFIED & BOOSTED LOGIC:
-        # We focus on the primary signals that matter:
-        # 1. Carbon Trend (Short-term) - What is happening next?
-        # 2. Lookahead (Long-term) - What is happening in the next few hours?
-        # 3. Credit Pressure - Are we running out of budget?
-        #
-        # We remove demand and emissions adjustments as they were diluting the
-        # primary carbon-aware signal ("nerfing" the strategy).
-
+        # BALANCED & BOOSTED LOGIC:
+        # We keep all signals but weight them carefully to avoid dilution.
+        # 1. Carbon Trend (Short-term): 30% - Strong immediate reaction
+        # 2. Lookahead (Long-term): 30% - Strong strategic planning
+        # 3. Credit Pressure: 20% - Critical guardrail
+        # 4. Demand: 10% - Nuance for load spikes
+        # 5. Emissions: 10% - Nuance for carbon budget
+        
         total_adjustment = (
-            0.45 * carbon_adjustment +      # 45% weight on short-term trend (Boosted from 15%)
-            0.35 * lookahead_adjustment +   # 35% weight on extended forecast
-            0.20 * credit_pressure          # 20% weight on credit (Boosted from 10%)
+            0.30 * carbon_adjustment +      # 30% weight on short-term trend
+            0.30 * lookahead_adjustment +   # 30% weight on extended forecast
+            0.20 * credit_pressure +        # 20% weight on credit
+            0.10 * demand_adjustment +      # 10% weight on demand
+            0.10 * emissions_adjustment     # 10% weight on emissions
         )
 
         # Add zone adjustment directly as an override/bias
@@ -133,6 +134,8 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             "carbon_adjustment": carbon_adjustment,
             "lookahead_adjustment": lookahead_adjustment,
             "credit_pressure": credit_pressure,
+            "demand_adjustment": demand_adjustment,
+            "emissions_adjustment": emissions_adjustment,
             "zone_adjustment": zone_adjustment,
             "total_adjustment": total_adjustment,
             "cumulative_carbon_gco2": self._cumulative_carbon,
@@ -140,8 +143,9 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         })
         
         _LOGGER.debug(
-            "ForecastAwareGlobal: adj=%.3f (carbon=%.3f, lookahead=%.3f, credit=%.3f)",
-            total_adjustment, carbon_adjustment, lookahead_adjustment, credit_pressure
+            "ForecastAwareGlobal: adj=%.3f (C=%.2f, L=%.2f, Cr=%.2f, D=%.2f, E=%.2f)",
+            total_adjustment, carbon_adjustment, lookahead_adjustment, 
+            credit_pressure, demand_adjustment, emissions_adjustment
         )
 
         # Update cumulative emissions tracking based on commanded weights
@@ -225,13 +229,14 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative demand change
         demand_ratio = next_demand / current_demand
         
+        # Tuned thresholds to avoid noise
         if demand_ratio > 1.5:  # Demand spike expected (>50% increase)
             return -0.6  # Strongly conserve credit for spike
-        elif demand_ratio > 1.2:  # Moderate increase expected
+        elif demand_ratio > 1.25:  # Moderate increase expected
             return -0.3  # Moderately conserve
-        elif demand_ratio < 0.7:  # Demand drop expected (>30% decrease)
+        elif demand_ratio < 0.6:  # Demand drop expected (>40% decrease)
             return 0.4  # Can afford to spend credit
-        elif demand_ratio < 0.85:  # Slight decrease
+        elif demand_ratio < 0.8:  # Slight decrease
             return 0.2  # Slightly spend
         else:
             return 0.0  # Stable demand
@@ -253,6 +258,11 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             return 0.0
 
         if forecast.intensity_now is None or forecast.intensity_now <= 0:
+            return 0.0
+
+        # CRITICAL FIX: If current intensity is low (green), we should NOT penalize
+        # based on past emissions. We should always encourage spending in green zones.
+        if forecast.intensity_now <= self.GREEN_THRESHOLD:
             return 0.0
 
         # Calculate average carbon per evaluation (weighted intensity commanded per evaluation cycle)
