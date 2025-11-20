@@ -34,6 +34,8 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
     """
 
     name = "forecast-aware-global"
+    GREEN_THRESHOLD = 80.0   # gCO2/kWh threshold for "very clean" slots
+    RED_THRESHOLD = 220.0    # gCO2/kWh threshold for "very dirty" slots
 
     def __init__(self, *args, **kwargs):
         """Initialize with cumulative emissions tracker."""
@@ -88,23 +90,26 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         lookahead_adjustment = self._compute_extended_lookahead_adjustment(forecast)
         
         # =====================================================================
-        # Combine all adjustments
+        # Combine all adjustments (carbon zone bias + other signals)
         # =====================================================================
         credit_pressure = self._credit_pressure_adjustment()
+        carbon_zone = self._carbon_zone(forecast.intensity_now)
+        zone_adjustment = self._zone_adjustment(carbon_zone, forecast)
 
         total_adjustment = (
             0.15 * carbon_adjustment +      # 15% weight on short-term trend (reduced for stability)
             0.15 * demand_adjustment +      # 15% weight on demand forecast
             0.15 * emissions_adjustment +   # 15% weight on emissions budget
-            0.45 * lookahead_adjustment +   # 45% weight on extended forecast (PRIMARY factor!)
-            0.10 * credit_pressure          # 10% guard-rail from ledger state
+            0.35 * lookahead_adjustment +   # 35% weight on extended forecast (PRIMARY factor!)
+            0.10 * credit_pressure +        # 10% guard-rail from ledger state
+            0.10 * zone_adjustment          # 10% weight: absolute carbon quality
         )
 
         # Clamp total adjustment to reasonable bounds
         total_adjustment = max(-0.8, min(0.8, total_adjustment))  # Reduced from ±1.2 to ±0.8 for smoothness
         
         # Apply adjustment to weights
-        weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list)
+        weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list, carbon_zone)
         
         # Calculate new average precision
         avg_precision = sum(
@@ -120,6 +125,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             "emissions_adjustment": emissions_adjustment,
             "lookahead_adjustment": lookahead_adjustment,
             "credit_pressure": credit_pressure,
+            "zone_adjustment": zone_adjustment,
             "total_adjustment": total_adjustment,
             "cumulative_carbon_gco2": self._cumulative_carbon,
             "evaluation_count": float(self._evaluation_count),
@@ -327,15 +333,25 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Scale by 2.0 to get reasonable range, max out at ±0.7
         adjustment = -0.7 * math.tanh(trend_factor * 2.0)
 
-        # Additional factors: check for extreme min/max
+        # Additional factors: check for extreme min/max (absolute + relative)
         min_ratio = min_future / current
         max_ratio = max_future / current
 
-        # If there's an extreme opportunity or threat, slightly boost the signal
-        if min_ratio < 0.7:  # Very clean period ahead
-            adjustment += -0.15  # Extra conserve
-        if max_ratio > 1.3:  # Very dirty period ahead
-            adjustment += 0.15   # Extra spend now
+        if min_ratio < 0.7:
+            adjustment += -0.15  # future much cleaner than now
+        if max_ratio > 1.3:
+            adjustment += 0.15   # future much dirtier than now
+
+        # Absolute carbon quality overrides (strong push)
+        very_clean_now = current <= self.GREEN_THRESHOLD
+        very_dirty_now = current >= self.RED_THRESHOLD
+        very_clean_future = any(f <= self.GREEN_THRESHOLD for f in valid_forecasts)
+        very_dirty_future = any(f >= self.RED_THRESHOLD for f in valid_forecasts)
+
+        if very_clean_now and very_clean_future:
+            adjustment += -0.35  # Spend precision aggressively in green windows
+        if very_dirty_now and very_dirty_future:
+            adjustment += 0.4    # Cut precision aggressively in dirty windows
 
         # Clamp to ±1.0
         return max(-1.0, min(1.0, adjustment))
@@ -344,7 +360,8 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         self,
         base_weights: Dict[str, float],
         adjustment: float,
-        flavours: List[FlavourProfile]
+        flavours: List[FlavourProfile],
+        carbon_zone: str
     ) -> Dict[str, float]:
         """
         Apply adjustment to base weights.
@@ -370,14 +387,22 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             return base_weights
         
         baseline_name = sorted_flavours[0].name
+        baseline_floor = 0.02
+        if carbon_zone == "green":
+            baseline_floor = 0.08
+        elif carbon_zone == "red":
+            baseline_floor = 0.01
         
         # Create new weights
         weights = dict(base_weights)
         
         if adjustment > 0:  # Shift towards greener flavours
             baseline_weight = weights.get(baseline_name, 0.0)
-            baseline_floor = 0.02
-            reduction = min(baseline_weight * (0.4 + adjustment), baseline_weight - baseline_floor)
+            zone_multiplier = 1.5 if carbon_zone == "red" else 1.0
+            reduction = min(
+                baseline_weight * (0.4 + adjustment) * zone_multiplier,
+                max(0.0, baseline_weight - baseline_floor)
+            )
             
             if reduction > 0:
                 weights[baseline_name] = max(baseline_floor, baseline_weight - reduction)
@@ -396,7 +421,8 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
                 w for name, w in weights.items() if name != baseline_name
             )
             if other_total > 0:
-                reduction_factor = max(0.2, 1.0 + adjustment)
+                zone_multiplier = 1.5 if carbon_zone == "green" else 1.0
+                reduction_factor = max(0.1, 1.0 + adjustment * zone_multiplier)
                 reclaimed = 0.0
                 for name in list(weights.keys()):
                     if name == baseline_name:
@@ -413,6 +439,30 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
             weights = {k: v / total for k, v in weights.items()}
         
         return weights
+
+    def _carbon_zone(self, intensity: Optional[float]) -> str:
+        if intensity is None or intensity <= 0:
+            return "unknown"
+        if intensity <= self.GREEN_THRESHOLD:
+            return "green"
+        if intensity >= self.RED_THRESHOLD:
+            return "red"
+        return "normal"
+
+    def _zone_adjustment(self, zone: str, forecast: ForecastSnapshot) -> float:
+        if zone == "green":
+            return -0.6  # push strongly towards p100
+        if zone == "red":
+            return 0.6   # cut p100 hard in dirty windows
+
+        # In normal zone, look ahead quickly for approaching extremes
+        if forecast.schedule:
+            upcoming = [p.forecast for p in forecast.schedule[:3] if p.forecast]
+            if any(val and val <= self.GREEN_THRESHOLD for val in upcoming):
+                return -0.2
+            if any(val and val >= self.RED_THRESHOLD for val in upcoming):
+                return 0.2
+        return 0.0
 
     def _credit_pressure_adjustment(self) -> float:
         span = (self.ledger.credit_max - self.ledger.credit_min) or 1.0
