@@ -10,7 +10,6 @@ The difference between **commanded weights** (what the decision engine computes)
 |----------|-----|-----|------|
 | credit-greedy | +0.29pp | +0.33pp | -0.63pp |
 | forecast-aware | -0.91pp | -0.73pp | +1.64pp |
-| precision-tier | -0.35pp | -0.19pp | +0.54pp |
 | forecast-aware-global | -0.18pp | -0.19pp | +0.37pp |
 
 **All deviations are well within expected random variance (±2.5pp for ~300 requests).**
@@ -167,8 +166,7 @@ The current lag is acceptable because:
 
 The commanded vs actual weight mismatch is **expected behavior** caused by the polling-based architecture. The lag is 2-10 seconds, which causes transient deviations during schedule transitions but has **minimal impact on average behavior**.
 
-All four strategies show correct behavior when analyzed over the full test period:
-- Precision-tier: Minimal variance (8.6pp swing) - correct baseline
+All three carbon-aware strategies show correct behavior when analyzed over the full test period:
 - Credit-greedy: Moderate variance (24.7pp swing) - correct reactive behavior
 - Forecast-aware: High variance (45.9pp swing) - correct proactive behavior
 - Forecast-aware-global: High variance (38.4pp swing) - correct multi-factor optimization

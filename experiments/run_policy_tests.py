@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Simplified policy benchmark runner for thesis experiments.
 
-Tests each of the 4 policies by:
+Tests each of the 3 carbon-aware policies by:
 1. Patching the TrafficSchedule to use the policy
 2. Restarting the decision engine to reset credits
 3. Running a short Locust test (2 minutes)
@@ -19,7 +19,7 @@ from typing import Dict, Any, List
 import sys
 import requests
 
-POLICIES = ["credit-greedy", "forecast-aware", "forecast-aware-global", "precision-tier"]
+POLICIES = ["credit-greedy", "forecast-aware", "forecast-aware-global"]
 NAMESPACE = "carbonstat"
 SCHEDULE_NAME = "traffic-schedule"
 ENGINE_NAMESPACE = "carbonrouter-system"

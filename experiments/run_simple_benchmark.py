@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 import requests
 
-ALL_POLICIES = ["credit-greedy", "forecast-aware", "forecast-aware-global", "precision-tier", "p100", "round-robin", "random"]
+ALL_POLICIES = ["credit-greedy", "forecast-aware", "forecast-aware-global", "p100", "round-robin", "random"]
 NAMESPACE = "carbonstat"
 SCHEDULE_NAME = "traffic-schedule"
 ENGINE_NAMESPACE = "carbonrouter-system"

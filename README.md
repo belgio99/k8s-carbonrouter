@@ -45,7 +45,7 @@ Services labelled with `carbonrouter/enabled=true`. It discovers available
 flavours, pushes runtime configuration to the decision engine, and provisions
 supporting resources (DestinationsRules, KEDA ScaledObjects, Deployments, etc.).
 4. **Carbonstat sample app** (`carbonstat/`) is a simple Flask service exposing
-three precision tiers (`high`, `mid`, `low`) to showcase the impact of
+three precision flavours (`high`, `mid`, `low`) to showcase the impact of
 carbon-aware routing.
 
 Supporting content lives under `helm/` (Helm charts), `demo/` (example

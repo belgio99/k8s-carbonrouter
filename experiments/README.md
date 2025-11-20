@@ -1,12 +1,11 @@
 # Carbon-Aware Policy Benchmark
 
 This directory contains tooling for reproducible experiments that compare the
-four scheduling policies supported by the decision engine:
+three carbon-aware scheduling policies supported by the decision engine:
 
 * `credit-greedy`
 * `forecast-aware`
 * `forecast-aware-global`
-* `precision-tier`
 
 The goal is to run each policy under the same workload, with an identical
 carbon-intensity scenario, and collect metrics for thesis analysis (graphs, tables, raw CSV/JSON data).
@@ -53,7 +52,7 @@ This checks:
 * Mock carbon API (localhost:5000)
 * Decision engine configuration (CARBON_API_URL)
 
-**Complete benchmark run (40 minutes total - 10 minutes per policy):**
+**Complete benchmark run (30 minutes total - 10 minutes per policy):**
 
 ```bash
 # 1. Start port-forwards (in a separate terminal, or use tmux/screen)
@@ -85,7 +84,7 @@ open plots/
 
 - **carbon_scenario.json** - 180-point carbon intensity pattern (1-minute intervals, covers 3+ hours for forecast-aware-global)
 - **locust_router.py** - Locust workload generator for router endpoint
-- **run_temporal_benchmark.py** - Main orchestration script (tests all 4 policies with 10-minute runs each)
+- **run_temporal_benchmark.py** - Main orchestration script (tests all 3 carbon-aware policies with 10-minute runs each)
 - **setup_portforwards.sh** - Sets up all required port-forwards with verification
 - **plot_results.py** - Generates comprehensive graphs from benchmark results
 - **analyze_results.py** - Post-processing script for timeseries analysis (optional)
@@ -109,9 +108,7 @@ results/
 │   └── engine_metrics_final.txt    # Decision engine metrics
 ├── forecast-aware/
 │   └── ... (same structure)
-├── forecast-aware-global/
-│   └── ... (same structure)
-└── precision-tier/
+└── forecast-aware-global/
     └── ... (same structure)
 ```
 
@@ -127,8 +124,6 @@ plots/
 ├── forecast-aware/
 │   └── ... (same structure)
 ├── forecast-aware-global/
-│   └── ... (same structure)
-├── precision-tier/
 │   └── ... (same structure)
 └── comparison/
     ├── precision_comparison.png   # All policies on one graph
@@ -187,7 +182,7 @@ kubectl set env deployment/carbonrouter-decision-engine \
 
 The `run_temporal_benchmark.py` script orchestrates the complete test.
 
-**Run all policies (40 minutes):**
+**Run all policies (30 minutes):**
 
 ```bash
 python3 run_temporal_benchmark.py
@@ -204,9 +199,6 @@ python3 run_temporal_benchmark.py --policy forecast-aware
 
 # Test only forecast-aware-global
 python3 run_temporal_benchmark.py --policy forecast-aware-global
-
-# Test only precision-tier
-python3 run_temporal_benchmark.py --policy precision-tier
 ```
 
 **Run multiple specific policies (20 minutes):**
@@ -226,7 +218,7 @@ python3 run_temporal_benchmark.py --policy credit-greedy --policy forecast-aware
 8. Collect final metrics and compute deltas
 9. Save all data to `results/<policy>/`
 
-Run the benchmark (takes ~40 minutes total):
+Run the benchmark (takes ~30 minutes total):
 
 ```bash
 python3 run_temporal_benchmark.py
@@ -239,11 +231,11 @@ The script will print progress updates:
 Temporal Policy Benchmark
 ============================================================
 
-Found 4 policies to test: credit-greedy, forecast-aware, forecast-aware-global, precision-tier
+Found 3 policies to test: credit-greedy, forecast-aware, forecast-aware-global
 Test duration: 10.0 minutes per policy
-Total estimated time: 40.0 minutes
+Total estimated time: 30.0 minutes
 
-Testing policy: credit-greedy (1/4)
+Testing policy: credit-greedy (1/3)
   ⏳ Collecting baseline...
   ✓ Baseline collected (starting from 0 requests)
   🚀 Starting Locust (150 users, 50/s spawn rate)...
