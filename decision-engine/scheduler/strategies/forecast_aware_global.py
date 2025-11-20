@@ -75,14 +75,14 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         carbon_adjustment = self._compute_carbon_trend_adjustment(forecast)
         
         # =====================================================================
-        # Factor 2: Demand Forecast Analysis
+        # Factor 2: Demand Forecast Analysis (Disabled to avoid nerfing)
         # =====================================================================
-        demand_adjustment = self._compute_demand_adjustment(forecast)
+        # demand_adjustment = self._compute_demand_adjustment(forecast)
         
         # =====================================================================
-        # Factor 3: Cumulative Emissions Budget
+        # Factor 3: Cumulative Emissions Budget (Disabled to avoid nerfing)
         # =====================================================================
-        emissions_adjustment = self._compute_emissions_budget_adjustment(forecast)
+        # emissions_adjustment = self._compute_emissions_budget_adjustment(forecast)
         
         # =====================================================================
         # Factor 4: Extended Look-Ahead
@@ -96,17 +96,27 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         carbon_zone = self._carbon_zone(forecast.intensity_now)
         zone_adjustment = self._zone_adjustment(carbon_zone, forecast)
 
+        # SIMPLIFIED & BOOSTED LOGIC:
+        # We focus on the primary signals that matter:
+        # 1. Carbon Trend (Short-term) - What is happening next?
+        # 2. Lookahead (Long-term) - What is happening in the next few hours?
+        # 3. Credit Pressure - Are we running out of budget?
+        #
+        # We remove demand and emissions adjustments as they were diluting the
+        # primary carbon-aware signal ("nerfing" the strategy).
+
         total_adjustment = (
-            0.15 * carbon_adjustment +      # 15% weight on short-term trend (reduced for stability)
-            0.15 * demand_adjustment +      # 15% weight on demand forecast
-            0.15 * emissions_adjustment +   # 15% weight on emissions budget
-            0.35 * lookahead_adjustment +   # 35% weight on extended forecast (PRIMARY factor!)
-            0.10 * credit_pressure +        # 10% guard-rail from ledger state
-            0.10 * zone_adjustment          # 10% weight: absolute carbon quality
+            0.45 * carbon_adjustment +      # 45% weight on short-term trend (Boosted from 15%)
+            0.35 * lookahead_adjustment +   # 35% weight on extended forecast
+            0.20 * credit_pressure          # 20% weight on credit (Boosted from 10%)
         )
 
-        # Clamp total adjustment to reasonable bounds
-        total_adjustment = max(-0.8, min(0.8, total_adjustment))  # Reduced from ±1.2 to ±0.8 for smoothness
+        # Add zone adjustment directly as an override/bias
+        if zone_adjustment != 0:
+            total_adjustment += zone_adjustment
+
+        # Clamp total adjustment to full range to allow strong responses
+        total_adjustment = max(-1.0, min(1.0, total_adjustment))
         
         # Apply adjustment to weights
         weights = self._apply_adjustment(base.weights, total_adjustment, flavours_list, carbon_zone)
@@ -121,24 +131,17 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         diagnostics = PolicyDiagnostics({
             **base.diagnostics.fields,
             "carbon_adjustment": carbon_adjustment,
-            "demand_adjustment": demand_adjustment,
-            "emissions_adjustment": emissions_adjustment,
             "lookahead_adjustment": lookahead_adjustment,
             "credit_pressure": credit_pressure,
             "zone_adjustment": zone_adjustment,
             "total_adjustment": total_adjustment,
             "cumulative_carbon_gco2": self._cumulative_carbon,
             "evaluation_count": float(self._evaluation_count),
-            "avg_carbon_per_evaluation": (
-                self._cumulative_carbon / self._evaluation_count
-                if self._evaluation_count > 0 else 0.0
-            ),
         })
         
         _LOGGER.debug(
-            "ForecastAwareGlobal: adj=%.3f (carbon=%.3f, demand=%.3f, emissions=%.3f, lookahead=%.3f)",
-            total_adjustment, carbon_adjustment, demand_adjustment,
-            emissions_adjustment, lookahead_adjustment
+            "ForecastAwareGlobal: adj=%.3f (carbon=%.3f, lookahead=%.3f, credit=%.3f)",
+            total_adjustment, carbon_adjustment, lookahead_adjustment, credit_pressure
         )
 
         # Update cumulative emissions tracking based on commanded weights
@@ -176,18 +179,20 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # Calculate relative trend
         trend = (next_period - current) / current
 
-        # Smooth, gradual response to avoid oscillations
-        # Use hyperbolic tangent for smooth transitions
-        # tanh approaches ±1 asymptotically, preventing hard switches
-
-        # Scale trend to reasonable range (-3 to +3 for tanh)
-        scaled_trend = trend * 3.0
-
-        # tanh gives smooth S-curve response:
-        # - Small trends → small adjustments
-        # - Large trends → asymptotic approach to ±0.6 (not ±1.0 for stability)
-        import math
-        adjustment = -0.6 * math.tanh(scaled_trend)
+        # Use a linear response similar to the simpler ForecastAwarePolicy
+        # but with a higher cap since we are weighting it.
+        # We want a strong signal when trend is significant.
+        
+        # If trend is +10% (0.1), we want a significant adjustment.
+        # In ForecastAware, trend/current * 1.0 is used.
+        
+        # Scale factor: 2.0 means a 50% change in carbon gives a full 1.0 adjustment signal
+        scale_factor = 2.0
+        
+        raw_adjustment = -trend * scale_factor
+        
+        # Clamp to [-1.0, 1.0]
+        adjustment = max(-1.0, min(1.0, raw_adjustment))
 
         # Interpretation:
         # - Positive trend (rising carbon) → negative adjustment → increase p100 (use quality now)
@@ -320,7 +325,7 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         weighted_avg = weighted_sum / weight_total if weight_total > 0 else avg_future
         future_ratio = weighted_avg / current
 
-        # Smooth response to future trend using tanh
+        # Stronger response to future trend
         # If future is cleaner → conserve quality (positive adjustment → decrease p100)
         # If future is dirtier → spend quality now (negative adjustment → increase p100)
         import math
@@ -329,18 +334,19 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         # log(future/current) gives symmetric response to increases/decreases
         trend_factor = math.log(future_ratio)
 
-        # tanh for smooth S-curve response
-        # Scale by 2.0 to get reasonable range, max out at ±0.7
-        adjustment = -0.7 * math.tanh(trend_factor * 2.0)
+        # Direct linear scaling of the log-ratio
+        # log(0.5) ≈ -0.69 (future is half as dirty) -> we want positive adjustment ≈ +0.7
+        # log(2.0) ≈ +0.69 (future is twice as dirty) -> we want negative adjustment ≈ -0.7
+        adjustment = -trend_factor * 1.2
 
         # Additional factors: check for extreme min/max (absolute + relative)
         min_ratio = min_future / current
         max_ratio = max_future / current
 
-        if min_ratio < 0.7:
-            adjustment += -0.15  # future much cleaner than now
-        if max_ratio > 1.3:
-            adjustment += 0.15   # future much dirtier than now
+        if min_ratio < 0.6:
+            adjustment += 0.2  # future much cleaner than now -> save more
+        if max_ratio > 1.4:
+            adjustment += -0.2   # future much dirtier than now -> spend more
 
         # Absolute carbon quality overrides (strong push)
         very_clean_now = current <= self.GREEN_THRESHOLD
@@ -349,9 +355,9 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
         very_dirty_future = any(f >= self.RED_THRESHOLD for f in valid_forecasts)
 
         if very_clean_now and very_clean_future:
-            adjustment += -0.35  # Spend precision aggressively in green windows
+            adjustment += -0.4  # Spend precision aggressively in green windows
         if very_dirty_now and very_dirty_future:
-            adjustment += 0.4    # Cut precision aggressively in dirty windows
+            adjustment += 0.5    # Cut precision aggressively in dirty windows
 
         # Clamp to ±1.0
         return max(-1.0, min(1.0, adjustment))
