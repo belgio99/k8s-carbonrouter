@@ -6,9 +6,9 @@ spec:
   target:
     autoscaling:
       minReplicaCount: 0
-      maxReplicaCount: 15
-      cooldownPeriod: 60
-      cpuUtilization: 80
+      maxReplicaCount: 8
+      cooldownPeriod: 120
+      cpuUtilization: 90
   router:
     debug: true
     autoscaling:
@@ -27,9 +27,9 @@ spec:
     debug: true
     autoscaling:
       minReplicaCount: 0
-      maxReplicaCount: 15
-      cooldownPeriod: 60
-      cpuUtilization: 80
+      maxReplicaCount: 8
+      cooldownPeriod: 120
+      cpuUtilization: 90
     resources:
       requests:
         cpu: "200m"
@@ -48,6 +48,6 @@ spec:
     carbonTarget: "300"
     carbonTimeout: 5000
     carbonCacheTTL: 300
-    throttleMin: "0.2"
-    throttleIntensityFloor: "150.0"
-    throttleIntensityCeiling: "350.0"
+    throttleMin: "0.05"
+    throttleIntensityFloor: "100.0"
+    throttleIntensityCeiling: "300.0"

@@ -46,14 +46,70 @@ def check_kubernetes_resource(kind: str, name: str, namespace: str) -> bool:
     except Exception:
         return False
 
+def check_power_profiles() -> bool:
+    """Check if power profiles are valid for weight evaluation."""
+    import json
+    base = Path(__file__).parent
+    profile_path = base / "power_profiles.json"
+
+    if not profile_path.exists():
+        print(f"   ✗ power_profiles.json NOT FOUND")
+        return False
+
+    try:
+        with open(profile_path, 'r') as f:
+            profiles = json.load(f)
+
+        # Check structure
+        if 'always_on_components' not in profiles:
+            print(f"   ✗ Missing 'always_on_components' in power_profiles.json")
+            return False
+
+        if 'scalable_components' not in profiles:
+            print(f"   ✗ Missing 'scalable_components' in power_profiles.json")
+            return False
+
+        # Validate always-on components
+        required_always_on = ['operator', 'decision_engine', 'rabbitmq', 'keda', 'prometheus', 'grafana']
+        for comp in required_always_on:
+            if comp not in profiles['always_on_components']:
+                print(f"   ✗ Missing '{comp}' in always_on_components")
+                return False
+            if 'power_watts' not in profiles['always_on_components'][comp]:
+                print(f"   ✗ Missing 'power_watts' for {comp}")
+                return False
+
+        # Validate scalable components
+        required_scalable = ['router', 'consumer', 'target_precision_30', 'target_precision_50', 'target_precision_100']
+        for comp in required_scalable:
+            if comp not in profiles['scalable_components']:
+                print(f"   ✗ Missing '{comp}' in scalable_components")
+                return False
+            if 'idle_watts' not in profiles['scalable_components'][comp]:
+                print(f"   ✗ Missing 'idle_watts' for {comp}")
+                return False
+            if 'active_watts' not in profiles['scalable_components'][comp]:
+                print(f"   ✗ Missing 'active_watts' for {comp}")
+                return False
+
+        print(f"   ✓ power_profiles.json")
+        return True
+
+    except json.JSONDecodeError as e:
+        print(f"   ✗ Invalid JSON in power_profiles.json: {e}")
+        return False
+    except Exception as e:
+        print(f"   ✗ Error validating power_profiles.json: {e}")
+        return False
+
 def main():
     """Run all checks."""
     print("=" * 60)
     print("Temporal Benchmark Pre-flight Check")
     print("=" * 60)
-    
+
     all_ok = True
-    
+
     # Check CLI tools
     print("\n1. Checking CLI tools...")
     for cmd in ["kubectl", "python3", "locust"]:
@@ -62,7 +118,7 @@ def main():
         else:
             print(f"   ✗ {cmd} NOT FOUND")
             all_ok = False
-    
+
     # Check Python packages
     print("\n2. Checking Python packages...")
     for pkg in ["requests", "prometheus_client", "flask", "locust", "matplotlib"]:
@@ -71,11 +127,11 @@ def main():
         else:
             print(f"   ✗ {pkg} NOT INSTALLED")
             all_ok = False
-    
+
     if not all_ok:
         print("\n   Install missing packages with:")
         print("   pip3 install --break-system-packages requests prometheus_client flask locust matplotlib")
-    
+
     # Check files
     print("\n3. Checking experiment files...")
     base = Path(__file__).parent
@@ -92,6 +148,27 @@ def main():
             print(f"   ✓ {fname}")
         else:
             print(f"   ✗ {fname} NOT FOUND")
+            all_ok = False
+
+    # Check weight evaluation files
+    print("\n3b. Checking weight evaluation files...")
+    weight_eval_files = [
+        ("power_profiles.json", check_power_profiles),
+        ("power_calculator.py", None),
+        ("weight_evaluation.py", None),
+        ("plot_weight_evaluation.py", None),
+    ]
+
+    for fname, validator_func in weight_eval_files:
+        fpath = base / fname
+        if fpath.exists():
+            if validator_func:
+                if not validator_func():
+                    all_ok = False
+            else:
+                print(f"   ✓ {fname}")
+        else:
+            print(f"   ✗ {fname} NOT FOUND (needed for weight evaluation)")
             all_ok = False
     
     # Check Kubernetes resources
@@ -182,12 +259,16 @@ def main():
         print("  # Or run a single policy (10 minutes)")
         print("  python3 run_temporal_benchmark.py --policy credit-greedy")
         print("")
-        print("  # Then generate graphs")
+        print("  # Run weight evaluation (20 minutes)")
+        print("  python3 weight_evaluation.py")
+        print("")
+        print("  # Generate graphs")
         print("  python3 plot_results.py")
+        print("  python3 plot_weight_evaluation.py results/weight_evaluation_<timestamp>")
     else:
         print("❌ Some checks failed. Fix the issues above before running the benchmark.")
     print("=" * 60)
-    
+
     return 0 if all_ok else 1
 
 if __name__ == "__main__":

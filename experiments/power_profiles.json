@@ -1,0 +1,81 @@
+{
+  "_comment": "Power consumption profiles for infrastructure components in Watts (W)",
+  "_methodology": "Conservative estimates based on containerized workload literature and cloud instance profiling",
+  "_references": [
+    "Container power consumption: ~2-5W idle, ~10-20W under load (lightweight services)",
+    "Message brokers (RabbitMQ): ~15-25W (memory-intensive)",
+    "Monitoring stacks (Prometheus): ~10-15W (disk I/O + memory)",
+    "Computational workloads: ~5-15W idle, ~20-50W active (CPU-bound)"
+  ],
+
+  "always_on_components": {
+    "_description": "Components that run continuously in carbonrouter-system namespace",
+    "operator": {
+      "power_watts": 2.0,
+      "description": "Go controller with periodic reconciliation (low CPU, minimal memory)"
+    },
+    "decision_engine": {
+      "power_watts": 5.0,
+      "description": "Python Flask service with scheduler thread and Prometheus polling"
+    },
+    "rabbitmq": {
+      "power_watts": 15.0,
+      "description": "Message broker with persistent storage and memory caching"
+    },
+    "keda": {
+      "power_watts": 2.0,
+      "description": "Event-driven autoscaler with minimal overhead"
+    },
+    "prometheus": {
+      "power_watts": 10.0,
+      "description": "Metrics storage and query engine (TSDB with compaction)"
+    },
+    "grafana": {
+      "power_watts": 5.0,
+      "description": "Visualization dashboard (mostly idle, occasional queries)"
+    }
+  },
+
+  "scalable_components": {
+    "_description": "Components that autoscale based on load",
+    "router": {
+      "idle_watts": 3.0,
+      "active_watts": 8.0,
+      "description": "FastAPI HTTP server + RabbitMQ publisher (I/O bound)"
+    },
+    "consumer": {
+      "idle_watts": 3.0,
+      "active_watts": 8.0,
+      "description": "Async AMQP consumer + HTTP client (network + I/O bound)"
+    },
+    "target_precision_30": {
+      "idle_watts": 5.0,
+      "active_watts": 10.0,
+      "description": "Low-precision workload (30% dataset processing)"
+    },
+    "target_precision_50": {
+      "idle_watts": 5.0,
+      "active_watts": 15.0,
+      "description": "Medium-precision workload (50% dataset processing)"
+    },
+    "target_precision_100": {
+      "idle_watts": 5.0,
+      "active_watts": 20.0,
+      "description": "High-precision workload (100% dataset processing, CPU-intensive)"
+    }
+  },
+
+  "power_calculation_notes": {
+    "idle_vs_active": "Idle assumes replicas waiting for work (low CPU). Active assumes processing requests (higher CPU utilization).",
+    "replica_activity_threshold": "Consider replica 'active' if processing >1 request per sample interval (5s)",
+    "conservative_estimates": "These are conservative (lower-bound) estimates. Real power may be higher, strengthening the case for carbon-aware scheduling.",
+    "total_infrastructure_power": "Sum of always_on + scalable components based on replica counts"
+  },
+
+  "baseline_assumptions": {
+    "machine_type": "Cloud VM or containerized environment (not bare metal)",
+    "cpu_architecture": "x86_64 (higher power than ARM)",
+    "network_overhead": "Not explicitly modeled (implicitly included in component estimates)",
+    "storage_overhead": "RabbitMQ power estimate includes disk I/O for message persistence"
+  }
+}
