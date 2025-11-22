@@ -35,7 +35,7 @@ from .models import (
     ScalingDirective,
     precision_key,
 )
-from .strategies import CreditGreedyPolicy, ForecastAwarePolicy, ForecastAwareGlobalPolicy, ForecastAwareGlobalNoThrottlePolicy, P100Policy, RandomPolicy, RoundRobinPolicy, SchedulerPolicy
+from .strategies import CreditGreedyPolicy, ForecastAwarePolicy, ForecastAwareGlobalPolicy, P100Policy, RandomPolicy, RoundRobinPolicy, SchedulerPolicy
 from .providers import CarbonForecastProvider, DemandEstimator, ForecastManager
 
 _LOGGER = logging.getLogger("scheduler")
@@ -78,7 +78,6 @@ _POLICY_BUILDERS: Dict[str, type[SchedulerPolicy]] = {
     "credit-greedy": CreditGreedyPolicy,
     "forecast-aware": ForecastAwarePolicy,
     "forecast-aware-global": ForecastAwareGlobalPolicy,
-    "forecast-aware-global-no-throttle": ForecastAwareGlobalNoThrottlePolicy,
     "p100": P100Policy,
     "random": RandomPolicy,
     "round-robin": RoundRobinPolicy,
