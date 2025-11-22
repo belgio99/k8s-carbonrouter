@@ -233,6 +233,8 @@ spec:
                     type: string
                   targetError:
                     type: string
+                  evaluator:
+                    type: string
                   validFor:
                     format: int32
                     type: integer
@@ -356,6 +358,10 @@ spec:
               processingThrottle:
                 description: ProcessingThrottle exports the throttle factor applied
                   to downstream autoscaling.
+                type: string
+              routingEvaluator:
+                description: RoutingEvaluator indicates which component performs
+                  routing decisions (router or consumer).
                 type: string
               validUntil:
                 description: ValidUntil specifies when the schedule should be refreshed.

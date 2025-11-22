@@ -41,7 +41,7 @@ from prometheus_client import (
 )
 
 from common.schedule import TrafficScheduleManager
-from common.utils import b64dec, b64enc, debug, log
+from common.utils import b64dec, b64enc, debug, log, weighted_choice
 
 # ─────────────────────────────────────────────────────────────
 # Configuration
@@ -212,6 +212,49 @@ class ProcessingThrottle:
                 self._limit,
                 max_concurrency,
             )
+
+
+async def select_target_flavour(
+    schedule_mgr: TrafficScheduleManager,
+    queue_flavour: str,
+    forced: bool,
+) -> str:
+    """Return the target flavour after applying evaluator rules."""
+
+    if forced:
+        return queue_flavour
+
+    schedule = await schedule_mgr.snapshot()
+    evaluator = str(schedule.get("routingEvaluator", "router")).lower()
+    if evaluator != "consumer":
+        return queue_flavour
+
+    flavours = schedule.get("flavours") or []
+    weights: dict[str, int] = {}
+    for flavour_info in flavours:
+        precision = flavour_info.get("precision")
+        weight = flavour_info.get("weight", 0)
+        if precision is None:
+            continue
+        try:
+            precision_int = int(precision)
+        except (TypeError, ValueError):
+            continue
+        try:
+            weight_int = int(weight)
+        except (TypeError, ValueError):
+            continue
+        flavour_name = f"precision-{precision_int}"
+        weights[flavour_name] = weight_int
+
+    positive = {name: val for name, val in weights.items() if val > 0}
+    if not positive:
+        return queue_flavour
+
+    selected = weighted_choice(positive)
+    if not selected:
+        return queue_flavour
+    return selected
 MAX_RETRIES          = 5
 BACKOFF_FIRST_DELAY  = 1.0
 BACKOFF_FACTOR       = 2
@@ -271,6 +314,7 @@ class FlavourWorkerManager:
                             self._listen_channel,
                             self._exchange,
                             flavour,
+                            self._schedule,
                             self._channel_pool,
                             self._http_client,
                             self._processing_throttle,
@@ -334,7 +378,8 @@ async def forward_and_reply(
     flavour: str,
     channel_pool: Pool,
     http_client: httpx.AsyncClient,
-) -> tuple[int, float, str, bool, bool]:
+    schedule_mgr: TrafficScheduleManager,
+) -> tuple[int, float, str, bool, bool, str]:
     """
     Execute the HTTP request embedded in `message` and publish the response
     to `message.reply_to`.
@@ -354,6 +399,7 @@ async def forward_and_reply(
             f"Payload: method={payload.get('method')} path={payload.get('path')} headers={payload.get('headers')}"
         )
         # Extract precision number from flavour name (e.g., "precision-100" -> "100")
+        flavour = await select_target_flavour(schedule_mgr, flavour, forced)
         precision_value = flavour.split("-")[-1] if "-" in flavour else flavour
         response = await send_with_retry(
             http_client,
@@ -375,7 +421,7 @@ async def forward_and_reply(
         await message.nack(requeue=True)
 
         debug(f"Error processing message: {exc}")
-        return 500, time.perf_counter() - start_ts, method, forced, False
+        return 500, time.perf_counter() - start_ts, method, forced, False, flavour
 
     # Publish RPC reply using a pooled channel (avoids single-channel lock)
     async with channel_pool.acquire() as publish_ch:
@@ -395,7 +441,7 @@ async def forward_and_reply(
     await message.ack()
 
     elapsed = time.perf_counter() - start_ts
-    return status_code, elapsed, method, forced, True
+    return status_code, elapsed, method, forced, True, flavour
 
 # ──────────────────────────────────────────────────────────────
 # Worker – buffer path (queue.*)  pausable via TrafficSchedule
@@ -404,6 +450,7 @@ async def consume_buffer_queue(
     listen_channel: aio_pika.Channel,
     exchange: aio_pika.Exchange,
     flavour: str,
+    schedule_mgr: TrafficScheduleManager,
     channel_pool: Pool,
     http_client: httpx.AsyncClient,
     processing_throttle: ProcessingThrottle | None = None,
@@ -422,21 +469,32 @@ async def consume_buffer_queue(
     sem = asyncio.Semaphore(CONCURRENCY)
 
     async def _handle_message(message: aio_pika.IncomingMessage) -> None:
-            flav_hdr = message.headers.get("flavour", flavour)
+            queue_flavour = message.headers.get("flavour", flavour)
             q_type = message.headers.get("q_type", "queue")
-            status, dt_sec, method, forced, delivered = await forward_and_reply(
-                message, flav_hdr, channel_pool, http_client
+            (
+                status,
+                dt_sec,
+                method,
+                forced,
+                delivered,
+                effective_flavour,
+            ) = await forward_and_reply(
+                message,
+                queue_flavour,
+                channel_pool,
+                http_client,
+                schedule_mgr,
             )
-            MSG_CONSUMED.labels("queue", flav_hdr).inc()
+            MSG_CONSUMED.labels("queue", queue_flavour).inc()
             if delivered:
                 PROCESSED_HTTP_REQUESTS.labels(
                     method,
                     str(status),
                     q_type,
-                    flav_hdr,
+                    effective_flavour,
                     str(forced),
                 ).inc()
-            HTTP_FORWARD_LAT.labels(flav_hdr).observe(dt_sec)
+            HTTP_FORWARD_LAT.labels(effective_flavour).observe(dt_sec)
 
     async def _on_message(message: aio_pika.IncomingMessage) -> None:
         async with sem:
