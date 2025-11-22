@@ -333,13 +333,15 @@ spec:
 - `schedule_flavour_weight`: Weight per flavour
 
 ### Router Metrics
-- `router_http_requests_total`: Request counter by flavour
+
+- `router_ingress_http_requests_total`: Requests received before queuing
 - `router_request_duration_seconds`: End-to-end latency
 - `router_schedule_valid_seconds`: Time until schedule expiry
 
 ### Consumer Metrics
+
+- `router_http_requests_total`: Requests processed after buffering
 - `consumer_messages_total`: Messages consumed by flavour
-- `consumer_http_requests_total`: Requests forwarded to target
 - `consumer_forward_seconds`: HTTP forward latency
 
 ## Namespaces

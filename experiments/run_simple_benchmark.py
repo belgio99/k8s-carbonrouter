@@ -347,8 +347,8 @@ def query_prometheus(query: str) -> float:
     except Exception:
         return 0.0
 
-def extract_router_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, float]:
-    """Extract request counts per flavour from router metrics."""
+def extract_processed_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, float]:
+    """Extract consumer-side request counts per flavour."""
     requests_by_flavour = {}
     for key, value in metrics.items():
         if (key.startswith('router_http_requests_total{') and
@@ -473,11 +473,17 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
             carbon_intensity_map[name] = float(carbon)
     
     # Collect BASELINE metrics
-    router_metrics_baseline = parse_prometheus_metrics(scrape_metrics(ROUTER_METRICS_URL))
-    baseline_requests = extract_router_requests_by_flavour(router_metrics_baseline)
-    
+    router_metrics_baseline_text = scrape_metrics(ROUTER_METRICS_URL)
+    consumer_metrics_baseline_text = scrape_metrics(CONSUMER_METRICS_URL)
+    router_metrics_baseline = parse_prometheus_metrics(router_metrics_baseline_text)
+    consumer_metrics_baseline = parse_prometheus_metrics(consumer_metrics_baseline_text)
+    baseline_requests = extract_processed_requests_by_flavour(consumer_metrics_baseline)
+
     (policy_dir / "router_metrics_baseline.txt").write_text(
-        scrape_metrics(ROUTER_METRICS_URL), encoding="utf-8"
+        router_metrics_baseline_text, encoding="utf-8"
+    )
+    (policy_dir / "consumer_metrics_baseline.txt").write_text(
+        consumer_metrics_baseline_text, encoding="utf-8"
     )
     
     print(f"  ✓ Baseline collected (starting from {sum(baseline_requests.values()):.0f} requests)")
@@ -516,7 +522,7 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                 elapsed = time.time() - start_time
                 
                 # Get current metrics
-                router_metrics = parse_prometheus_metrics(scrape_metrics(ROUTER_METRICS_URL))
+                consumer_metrics = parse_prometheus_metrics(scrape_metrics(CONSUMER_METRICS_URL))
                 engine_metrics = parse_prometheus_metrics(scrape_metrics(ENGINE_METRICS_URL))
                 
                 # Get current schedule from decision engine to see commanded weights and ceilings
@@ -555,7 +561,7 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
                 replicas_consumer = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*consumer.*"}})')
                 replicas_target = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~"carbonstat-precision.*"}})')
                 
-                current_requests = extract_router_requests_by_flavour(router_metrics)
+                current_requests = extract_processed_requests_by_flavour(consumer_metrics)
                 
                 # Calculate delta since last sample
                 delta_requests = {}
@@ -652,8 +658,8 @@ def test_policy_with_sampling(policy: str, output_dir: Path) -> Dict[str, Any]:
     (policy_dir / "engine_metrics_final.txt").write_text(engine_metrics_final_text, encoding="utf-8")
     
     # Final request counts
-    final_router_metrics = parse_prometheus_metrics(router_metrics_final_text)
-    final_requests = extract_router_requests_by_flavour(final_router_metrics)
+    final_consumer_metrics = parse_prometheus_metrics(consumer_metrics_final_text)
+    final_requests = extract_processed_requests_by_flavour(final_consumer_metrics)
     
     # Compute delta from baseline
     requests_delta = {

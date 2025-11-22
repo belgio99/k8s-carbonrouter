@@ -89,9 +89,10 @@ docker build -t carbonrouter-consumer -f Dockerfile.consumer .
 
 Key metrics exported (labels vary per flavour and queue):
 
-- `router_http_requests_total`, `router_request_duration_seconds`,
-  `router_schedule_valid_seconds`, `router_messages_published_total`.
-- `consumer_messages_total`, `consumer_http_requests_total`,
+- Router: `router_ingress_http_requests_total`,
+  `router_request_duration_seconds`, `router_schedule_valid_seconds`,
+  `router_messages_published_total`.
+- Consumer: `router_http_requests_total`, `consumer_messages_total`,
   `consumer_forward_seconds`.
 
 Scrape the router on `:METRICS_PORT/metrics` (served by Prometheus client) and

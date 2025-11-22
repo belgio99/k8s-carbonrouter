@@ -25,6 +25,8 @@ SCHEDULE_NAME = "traffic-schedule"
 ENGINE_NAMESPACE = "carbonrouter-system"
 ENGINE_DEPLOYMENT = "carbonrouter-decision-engine"
 MOCK_CARBON_URL = "http://127.0.0.1:5001"
+ROUTER_METRICS_URL = "http://127.0.0.1:18001/metrics"
+CONSUMER_METRICS_URL = "http://127.0.0.1:18002/metrics"
 
 def run_cmd(cmd: List[str], capture: bool = True) -> subprocess.CompletedProcess:
     """Run command and return result."""
@@ -179,11 +181,15 @@ def test_policy(policy: str, output_dir: Path) -> Dict[str, Any]:
     )
     
     try:
-        router_metrics_before = scrape_metrics("http://127.0.0.1:18001/metrics")
+        router_metrics_before = scrape_metrics(ROUTER_METRICS_URL)
+        consumer_metrics_before = scrape_metrics(CONSUMER_METRICS_URL)
         (policy_dir / "router_metrics_before.txt").write_text(
             router_metrics_before, encoding="utf-8"
         )
-        requests_before = extract_key_metrics(router_metrics_before)
+        (policy_dir / "consumer_metrics_before.txt").write_text(
+            consumer_metrics_before, encoding="utf-8"
+        )
+        requests_before = extract_key_metrics(consumer_metrics_before)
     except Exception as e:
         print(f"  ⚠ Failed to collect baseline metrics: {e}")
         requests_before = {}
@@ -203,11 +209,15 @@ def test_policy(policy: str, output_dir: Path) -> Dict[str, Any]:
     )
     
     try:
-        router_metrics_after = scrape_metrics("http://127.0.0.1:18001/metrics")
+        router_metrics_after = scrape_metrics(ROUTER_METRICS_URL)
+        consumer_metrics_after = scrape_metrics(CONSUMER_METRICS_URL)
         (policy_dir / "router_metrics_after.txt").write_text(
             router_metrics_after, encoding="utf-8"
         )
-        requests_after = extract_key_metrics(router_metrics_after)
+        (policy_dir / "consumer_metrics_after.txt").write_text(
+            consumer_metrics_after, encoding="utf-8"
+        )
+        requests_after = extract_key_metrics(consumer_metrics_after)
     except Exception as e:
         print(f"  ⚠ Failed to collect final metrics: {e}")
         requests_after = {}

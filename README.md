@@ -160,9 +160,10 @@ deployments discovered by the operator.
 
 All components export Prometheus metrics:
 
-- Router: request counters (`router_http_requests_total`), latency histograms,
-and schedule TTL gauges.
-- Consumer: message counters, HTTP forward durations, and retry statistics.
+- Router: ingress request counters (`router_ingress_http_requests_total`),
+latency histograms, and schedule TTL gauges.
+- Consumer: processed request counters (`router_http_requests_total`), message
+  counters, HTTP forward durations, and retry statistics.
 - Decision engine: credit ledger gauges, forecast metrics, flavour weight
   gauges, and autoscaling throttle (`scheduler_processing_throttle`) and ceiling
   metrics (`scheduler_replica_ceiling`).

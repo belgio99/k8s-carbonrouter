@@ -91,10 +91,10 @@ The dashboard includes the following panels:
 * **Description**: Displays the currently active scheduling policy (e.g., "forecast-aware")
 * **Metric**: Derived from `scheduler_credit_balance` labels
 
-### 10. Router Request Rate by Flavour
+### 10. Processed Request Rate by Flavour
 
 * **Type**: Time Series
-* **Description**: HTTP request rate handled by the router, broken down by precision flavour
+* **Description**: HTTP request rate completed by the consumer (post-queue), broken down by precision flavour
 * **Metric**: `sum by (flavour) (rate(router_http_requests_total[5m]))`
 
 ### 11. Consumer Message Rate by Flavour
