@@ -499,8 +499,8 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
 
         while locust_proc.poll() is None:
             try:
-                time.sleep(SAMPLE_INTERVAL_SECONDS)
-                elapsed = time.time() - start_time
+                loop_start = time.time()
+                elapsed = loop_start - start_time
 
                 # Collect metrics
                 router_metrics = parse_prometheus_metrics(scrape_metrics(ROUTER_METRICS_URL))
@@ -622,6 +622,11 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
                           f"queue={int(queue_depth_total)}, "
                           f"replicas={int(replicas_consumer+replicas_target)}, "
                           f"throttle={throttle_factor:.2f}")
+
+                # Sleep for remainder of interval to maintain accurate 5-second sampling
+                loop_elapsed = time.time() - loop_start
+                sleep_time = max(0, SAMPLE_INTERVAL_SECONDS - loop_elapsed)
+                time.sleep(sleep_time)
 
             except Exception as e:
                 print(f"  ⚠ Sampling error: {e}")
