@@ -802,7 +802,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 			Type:              "rabbitmq",
 			AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
 			Metadata: map[string]string{
-				"queueName": directQueueName(svc.Namespace, svc.Name, precision),
+				"queueName": bufferedQueueName(svc.Namespace, svc.Name, precision),
 				"mode":      "QueueLength",
 				"value":     "500",
 			},
@@ -836,7 +836,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 				kedav1alpha1.ScaleTriggers{
 					Type: "prometheus",
 					Metadata: map[string]string{
-						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
+						"serverAddress":       "http://carbonrouter-kube-promethe-prometheus.carbonrouter-system.svc:9090",
 						"query":               "sum(increase(consumer_http_requests_created[60s]))",
 						"threshold":           "500",
 						"activationThreshold": "1",
@@ -845,8 +845,8 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 				kedav1alpha1.ScaleTriggers{
 					Type: "prometheus",
 					Metadata: map[string]string{
-						"serverAddress": "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
-						"query":         fmt.Sprintf(`sum(rabbitmq_queue_messages_ready{queue=~"%s.+"})`, queueRegex),
+						"serverAddress": "http://carbonrouter-kube-promethe-prometheus.carbonrouter-system.svc:9090",
+						"query":         fmt.Sprintf(`sum(rabbitmq_detailed_queue_messages_ready{queue=~"%s.+"})`, queueRegex),
 						"threshold":     "1",
 					},
 				},
@@ -917,8 +917,8 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 				{
 					Type: "prometheus",
 					Metadata: map[string]string{
-						"serverAddress":       "http://carbonrouter-kube-prometheu-prometheus.carbonrouter-system.svc:9090",
-						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_queue_messages_ready{queue="%s"}[30s]))`, bufferedQueue),
+						"serverAddress":       "http://carbonrouter-kube-promethe-prometheus.carbonrouter-system.svc:9090",
+						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_detailed_queue_messages_ready{queue="%s"}[30s]))`, bufferedQueue),
 						"threshold":           "500",
 						"activationThreshold": "1",
 					},
