@@ -804,7 +804,7 @@ func (r *FlavourRouterReconciler) ensureConsumerScaledObject(ctx context.Context
 			Metadata: map[string]string{
 				"queueName": bufferedQueueName(svc.Namespace, svc.Name, precision),
 				"mode":      "QueueLength",
-				"value":     "500",
+				"value":     "50",
 			},
 		})
 	}
@@ -918,7 +918,7 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 					Metadata: map[string]string{
 						"serverAddress":       "http://carbonrouter-kube-promethe-prometheus.carbonrouter-system.svc:9090",
 						"query":               fmt.Sprintf(`sum(max_over_time(rabbitmq_detailed_queue_messages_ready{queue="%s"}[30s]))`, bufferedQueue),
-						"threshold":           "500",
+						"threshold":           "50",
 						"activationThreshold": "1",
 					},
 				},
