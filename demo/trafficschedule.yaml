@@ -43,11 +43,11 @@ spec:
     creditMax: "2.0"
     creditWindow: 10
     policy: forecast-aware
-    validFor: 300
+    validFor: 5
     discoveryInterval: 30
     carbonTarget: "150"
     carbonTimeout: 5000
-    carbonCacheTTL: 300
+    carbonCacheTTL: 5
     throttleMin: "0.01"
     throttleIntensityFloor: "250.0"
     throttleIntensityCeiling: "300.0"

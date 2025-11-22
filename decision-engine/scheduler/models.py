@@ -161,7 +161,7 @@ class SchedulerConfig:
     carbon_target: str = "national"
     carbon_timeout: float = 2.0
     carbon_cache_ttl: float = 300.0
-    throttle_min: float = 0.2  # 20% minimum throttle
+    throttle_min: float = 0.05  # 5% minimum throttle
     throttle_intensity_floor: float = 150.0  # Start throttling above 150 gCO2/kWh
     throttle_intensity_ceiling: float = 350.0  # Full throttle at 350+ gCO2/kWh
 
@@ -186,7 +186,7 @@ class SchedulerConfig:
             carbon_timeout=float(os.getenv("CARBON_API_TIMEOUT", "2.0")),
             # Default cache TTL set to 5 seconds for faster response to rapid carbon changes
             carbon_cache_ttl=float(os.getenv("CARBON_API_CACHE_TTL", "5.0")),
-            throttle_min=float(os.getenv("THROTTLE_MIN", "0.2")),
+            throttle_min=float(os.getenv("THROTTLE_MIN", "0.05")),
             throttle_intensity_floor=float(os.getenv("THROTTLE_INTENSITY_FLOOR", "150.0")),
             throttle_intensity_ceiling=float(os.getenv("THROTTLE_INTENSITY_CEILING", "350.0")),
         )
@@ -363,6 +363,31 @@ class ScalingDirective:
             intensity_ratio = 1.0
 
         throttle = _clamp(min(credits_ratio, intensity_ratio), min_throttle, 1.0)
+
+        # OPPORTUNITY-AWARE THROTTLING:
+        # Look ahead in the forecast. If a significantly greener window is approaching,
+        # throttle more aggressively NOW to shift load to that window.
+        if forecast.schedule:
+            # Look ahead up to 2 hours (approx 24 5-min slots, but schedule might be coarser)
+            # We'll check the next 6 points as a proxy for "near future"
+            future_points = [p.forecast for p in forecast.schedule[:6] if p.forecast is not None]
+            
+            if future_points and forecast.intensity_now and forecast.intensity_now > 0:
+                min_future = min(future_points)
+                current = forecast.intensity_now
+                
+                # Calculate opportunity ratio: How much cleaner is the future?
+                # Ratio 2.0 means future is 2x cleaner (half the emissions)
+                opportunity_ratio = current / min_future if min_future > 0 else 1.0
+                
+                if opportunity_ratio > 1.2:  # If future is >20% cleaner
+                    # Apply shift penalty: Reduce throttle inversely proportional to opportunity
+                    # Example: Ratio 2.0 -> multiply throttle by 0.5
+                    # We clamp the multiplier to avoid stopping completely (unless throttle_min allows)
+                    shift_multiplier = 1.0 / opportunity_ratio
+                    
+                    # Apply aggressive shifting
+                    throttle = max(min_throttle, throttle * shift_multiplier)
 
         # Compute replica ceilings for carbon-aware autoscaling.
         # During high carbon periods or low credit balance, reduce maxReplicas to throttle
