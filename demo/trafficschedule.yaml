@@ -48,3 +48,6 @@ spec:
     carbonTarget: "300"
     carbonTimeout: 5000
     carbonCacheTTL: 300
+    throttleMin: "0.2"
+    throttleIntensityFloor: "150.0"
+    throttleIntensityCeiling: "350.0"
