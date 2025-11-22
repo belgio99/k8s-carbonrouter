@@ -31,7 +31,7 @@ import requests
 
 # Test strategies: (policy_name, config_overrides, directory_suffix)
 STRATEGIES = [
-    ("forecast-aware-global", {"throttleMin": "0.2"}, "with-throttle"),  # Normal throttling
+    ("forecast-aware-global", {"throttleMin": "0.05"}, "with-throttle"),  # Normal throttling
     ("forecast-aware-global", {"throttleMin": "1.0"}, "no-throttle"),  # Throttling disabled
 ]
 
