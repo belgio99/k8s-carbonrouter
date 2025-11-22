@@ -110,35 +110,36 @@ def ensure_port_forwards() -> None:
 
 
 def reset_carbon_pattern() -> None:
-    """Reset the mock carbon API to use autoscaling scenario."""
+    """Reset the mock carbon API pattern."""
     try:
-        # Check if carbon API is running with correct scenario
+        # Check if carbon API is running
         response = requests.get(f"{MOCK_CARBON_URL}/health", timeout=2)
-        if response.status_code == 200:
-            info = response.json()
-            scenario = info.get("scenario", "")
-
-            if "autoscaling" not in scenario.lower():
-                print(f"  ⚠️  Carbon API is using '{scenario}' scenario")
-                print(f"     For this test, restart with autoscaling scenario:")
-                print(f"     pkill -f mock-carbon-api && cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/{CARBON_SCENARIO} --port 5001 &")
-                sys.exit(1)
+        if response.status_code != 200:
+            print(f"  ⚠️  Carbon API health check failed")
+            return
 
         # Reset to beginning
         response = requests.post(f"{MOCK_CARBON_URL}/reset", timeout=5)
         if response.status_code == 200:
             result = response.json()
             print(f"  ✓ Carbon pattern reset to start")
-            print(f"     Scenario: {result.get('scenario', 'unknown')}")
+            scenario = result.get("scenario", "unknown")
+            if scenario:
+                print(f"     Scenario: {scenario}")
+        elif response.status_code == 404:
+            print(f"  ⚠️  Carbon API /reset endpoint not available")
+            print(f"     Continuing without reset...")
         else:
             print(f"  ⚠️  Could not reset carbon API (status {response.status_code})")
+            print(f"     Continuing anyway...")
     except requests.exceptions.ConnectionError:
         print(f"  ⚠️  Carbon API not running at {MOCK_CARBON_URL}")
         print(f"     Start it with:")
-        print(f"     cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/{CARBON_SCENARIO} --port 5001 &")
+        print(f"     cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
         sys.exit(1)
     except Exception as e:
         print(f"  ⚠️  Carbon API error: {e}")
+        print(f"     Continuing anyway...")
 
 
 def reset_decision_engine() -> None:
@@ -265,7 +266,7 @@ def parse_prometheus_metrics(text: str) -> Dict[str, float]:
     return metrics
 
 
-def query_prometheus(query: str) -> float:
+def query_prometheus(query: str, warn_on_empty: bool = False) -> float:
     """Execute a PromQL query and return the scalar result."""
     try:
         response = requests.get(
@@ -279,9 +280,83 @@ def query_prometheus(query: str) -> float:
             if result and len(result) > 0:
                 value = result[0].get("value", [None, 0])
                 return float(value[1]) if len(value) > 1 else 0.0
+            elif warn_on_empty:
+                print(f"    ⚠️  Empty result for query: {query[:80]}...")
         return 0.0
+    except Exception as e:
+        if warn_on_empty:
+            print(f"    ⚠️  Query failed: {e}")
+        return 0.0
+
+
+def get_kubectl_replica_counts() -> Dict[str, int]:
+    """Get replica counts directly from kubectl (fallback for Prometheus)."""
+    try:
+        result = subprocess.run(
+            ["kubectl", "get", "deployments", "-n", NAMESPACE, "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            import json
+            data = json.loads(result.stdout)
+            replicas = {}
+            for deployment in data.get("items", []):
+                name = deployment["metadata"]["name"]
+                count = deployment["status"].get("replicas", 0)
+                if "router" in name:
+                    replicas["router"] = count
+                elif "consumer" in name:
+                    replicas["consumer"] = count
+                elif "carbonstat-precision" in name:
+                    replicas.setdefault("target", 0)
+                    replicas["target"] += count
+            return replicas
     except Exception:
-        return 0.0
+        pass
+    return {"router": 0, "consumer": 0, "target": 0}
+
+
+def get_rabbitmq_queue_depths() -> Dict[str, int]:
+    """Get queue depths via kubectl exec to RabbitMQ pod."""
+    try:
+        result = subprocess.run(
+            [
+                "kubectl", "exec", "-n", "carbonrouter-system",
+                "carbonrouter-rabbitmq-0", "--",
+                "rabbitmqctl", "list_queues", "name", "messages_ready", "-q"
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            depths = {
+                "total": 0,
+                "p30": 0,
+                "p50": 0,
+                "p100": 0
+            }
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    name = parts[0]
+                    try:
+                        messages = int(parts[1])
+                    except ValueError:
+                        continue
+                    depths["total"] += messages
+                    if "precision-30" in name:
+                        depths["p30"] += messages
+                    elif "precision-50" in name:
+                        depths["p50"] += messages
+                    elif "precision-100" in name:
+                        depths["p100"] += messages
+            return depths
+    except Exception:
+        pass
+    return {"total": 0, "p30": 0, "p50": 0, "p100": 0}
 
 
 def extract_router_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, float]:
@@ -452,15 +527,24 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
                     effective_ceilings = {}
                     throttle_factor = 0.0
 
-                # Query Prometheus
-                queue_depth_total = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}"}})')
-                queue_depth_p30 = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}",queue=~".*precision-30.*"}})')
-                queue_depth_p50 = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}",queue=~".*precision-50.*"}})')
-                queue_depth_p100 = query_prometheus(f'sum(rabbitmq_queue_messages_ready{{namespace="{NAMESPACE}",queue=~".*precision-100.*"}})')
+                # Try RabbitMQ Management API first (more reliable)
+                queue_depths = get_rabbitmq_queue_depths()
+                queue_depth_total = queue_depths["total"]
+                queue_depth_p30 = queue_depths["p30"]
+                queue_depth_p50 = queue_depths["p50"]
+                queue_depth_p100 = queue_depths["p100"]
 
-                replicas_router = query_prometheus(f'kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*router.*"}}')
-                replicas_consumer = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*consumer.*"}})')
-                replicas_target = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~"carbonstat-precision.*"}})')
+                # Try kubectl first (more reliable than Prometheus queries)
+                kubectl_replicas = get_kubectl_replica_counts()
+                replicas_router = kubectl_replicas["router"]
+                replicas_consumer = kubectl_replicas["consumer"]
+                replicas_target = kubectl_replicas["target"]
+
+                # Fallback to Prometheus if kubectl failed (all zeros)
+                if replicas_router == 0 and replicas_consumer == 0 and replicas_target == 0:
+                    replicas_router = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*router.*"}})')
+                    replicas_consumer = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~".*consumer.*"}})')
+                    replicas_target = query_prometheus(f'sum(kube_deployment_status_replicas_available{{namespace="{NAMESPACE}",deployment=~"carbonstat-precision.*"}})')
 
                 current_requests = extract_router_requests_by_flavour(router_metrics)
 
