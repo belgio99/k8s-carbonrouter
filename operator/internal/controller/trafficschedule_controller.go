@@ -315,6 +315,7 @@ func (r *TrafficScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		CreditMax:      formatFloat(remote.Credits.Max),
 		Diagnostics:    diagnostics,
 	}
+	status.RoutingEvaluator = resolveRoutingEvaluator(existing.Spec.Scheduler)
 	if remote.Processing.Throttle > 0 {
 		status.ProcessingThrottle = formatFloat(remote.Processing.Throttle)
 	}
@@ -428,6 +429,7 @@ func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, fl
 	assignFloat(cfg, "throttleMin", s.ThrottleMin)
 	assignFloat(cfg, "throttleIntensityFloor", s.ThrottleIntensityFloor)
 	assignFloat(cfg, "throttleIntensityCeiling", s.ThrottleIntensityCeiling)
+	cfg["evaluator"] = resolveRoutingEvaluator(s)
 
 	components := map[string]map[string]int32{}
 	if bounds := replicaBounds(spec.Router); bounds != nil {
@@ -452,6 +454,17 @@ func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, fl
 
 func formatFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func resolveRoutingEvaluator(spec schedulingv1alpha1.SchedulerConfigSpec) string {
+	if spec.Evaluator == nil {
+		return "router"
+	}
+	value := strings.ToLower(strings.TrimSpace(*spec.Evaluator))
+	if value == "consumer" {
+		return "consumer"
+	}
+	return "router"
 }
 
 func assignFloat(target map[string]interface{}, key string, value *string) {

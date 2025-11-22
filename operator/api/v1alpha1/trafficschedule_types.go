@@ -72,6 +72,8 @@ type SchedulerConfigSpec struct {
 	ThrottleIntensityFloor *string `json:"throttleIntensityFloor,omitempty"`
 	// +optional
 	ThrottleIntensityCeiling *string `json:"throttleIntensityCeiling,omitempty"`
+	// +optional
+	Evaluator *string `json:"evaluator,omitempty"`
 }
 
 // TargetConfig defines the configuration for the target deployments.
@@ -141,6 +143,8 @@ type TrafficScheduleStatus struct {
 	ForecastSchedule []ForecastSlot `json:"forecastSchedule,omitempty"`
 	// Diagnostics contains policy-specific telemetry useful for debugging.
 	Diagnostics map[string]string `json:"diagnostics,omitempty"`
+	// RoutingEvaluator indicates which component performs routing decisions (router or consumer).
+	RoutingEvaluator string `json:"routingEvaluator,omitempty"`
 }
 
 // ForecastSlot describes a single carbon forecast interval.

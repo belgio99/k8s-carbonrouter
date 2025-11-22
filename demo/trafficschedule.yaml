@@ -9,7 +9,7 @@ spec:
       minReplicaCount: 1
       maxReplicaCount: 12
       cooldownPeriod: 120
-      cpuUtilization: 90
+      cpuUtilization: 80
   router:
     debug: true
     autoscaling:
@@ -30,7 +30,7 @@ spec:
       minReplicaCount: 1
       maxReplicaCount: 12
       cooldownPeriod: 120
-      cpuUtilization: 90
+      cpuUtilization: 80
     resources:
       requests:
         cpu: "200m"
@@ -44,6 +44,7 @@ spec:
     creditMax: "2.0"
     creditWindow: 10
     policy: forecast-aware
+    evaluator: consumer
     validFor: 5
     discoveryInterval: 30
     carbonTarget: "150"
