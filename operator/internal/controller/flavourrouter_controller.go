@@ -884,7 +884,6 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 	}
 
 	soName := fmt.Sprintf("%s-precision-%d", svc.Name, precision)
-	directQueue := directQueueName(svc.Namespace, svc.Name, precision)
 	bufferedQueue := bufferedQueueName(svc.Namespace, svc.Name, precision)
 
 	// Apply carbon-aware replica ceiling if available
@@ -927,7 +926,7 @@ func (r *FlavourRouterReconciler) ensurePrecisionScaledObject(ctx context.Contex
 					Type:              "rabbitmq",
 					AuthenticationRef: &kedav1alpha1.AuthenticationRef{Name: "carbonrouter-rabbitmq-auth", Kind: "ClusterTriggerAuthentication"},
 					Metadata: map[string]string{
-						"queueName": directQueue,
+						"queueName": bufferedQueue,
 						"mode":      "QueueLength",
 						"value":     "500",
 					},
