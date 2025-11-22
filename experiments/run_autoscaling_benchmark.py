@@ -5,7 +5,7 @@ Autoscaling benchmark: Compare forecast-aware-global with and without throttling
 This benchmark demonstrates the carbon savings from throttling-based temporal shifting
 by comparing:
 - forecast-aware-global (with throttling): Limits replicas during high carbon, queues build
-- forecast-aware-global-no-throttle (baseline): Scales freely, no carbon-aware throttling
+- forecast-aware-global (no throttling): Scales freely, no carbon-aware throttling
 
 Uses a ramping load pattern to stress-test the autoscaling behavior:
 - 0-2 min: Ramp 50→250 users (spike during high carbon period)
@@ -29,10 +29,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 import requests
 
-# Test strategies
+# Test strategies: (policy_name, config_overrides, directory_suffix)
 STRATEGIES = [
-    ("forecast-aware-global", {"throttleMin": "0.2"}),  # Normal throttling
-    ("forecast-aware-global-no-throttle", {"throttleMin": "1.0"}),  # Throttling disabled
+    ("forecast-aware-global", {"throttleMin": "0.2"}, "with-throttle"),  # Normal throttling
+    ("forecast-aware-global", {"throttleMin": "1.0"}, "no-throttle"),  # Throttling disabled
 ]
 
 NAMESPACE = "carbonstat"
@@ -251,8 +251,11 @@ def patch_policy(policy: str, config_overrides: Dict[str, str]) -> None:
 
 def scrape_metrics(url: str) -> str:
     """Fetch Prometheus metrics from URL."""
-    response = requests.get(url, timeout=10)
-    return response.text
+    try:
+        response = requests.get(url, timeout=10)
+        return response.text
+    except requests.exceptions.ConnectionError:
+        return "# Metrics unavailable (connection refused)\n"
 
 
 def parse_prometheus_metrics(text: str) -> Dict[str, float]:
@@ -407,14 +410,16 @@ def start_locust_background(policy_dir: Path) -> subprocess.Popen:
     )
 
 
-def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Path) -> Dict[str, Any]:
+def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Path, dir_suffix: str = "") -> Dict[str, Any]:
     """Test a single strategy with sampling."""
-    policy_dir = output_dir / policy.replace("/", "_")
+    dir_name = f"{policy.replace('/', '_')}-{dir_suffix}" if dir_suffix else policy.replace("/", "_")
+    policy_dir = output_dir / dir_name
     policy_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*70}")
     print(f"Testing: {policy}")
     print(f"Config: {config_overrides}")
+    print(f"Dir: {dir_name}")
     print(f"{'='*70}")
 
     # Reset environment
@@ -629,7 +634,10 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
     time.sleep(5)
 
     (policy_dir / "router_metrics_final.txt").write_text(scrape_metrics(ROUTER_METRICS_URL), encoding="utf-8")
-    (policy_dir / "consumer_metrics_final.txt").write_text(scrape_metrics(CONSUMER_METRICS_URL), encoding="utf-8")
+    try:
+        (policy_dir / "consumer_metrics_final.txt").write_text(scrape_metrics(CONSUMER_METRICS_URL), encoding="utf-8")
+    except Exception as e:
+        print(f"  ⚠️  Consumer metrics unavailable: {e}")
     (policy_dir / "engine_metrics_final.txt").write_text(scrape_metrics(ENGINE_METRICS_URL), encoding="utf-8")
 
     final_router_metrics = parse_prometheus_metrics(scrape_metrics(ROUTER_METRICS_URL))
@@ -715,8 +723,8 @@ def main():
     # Run tests
     summaries = []
     try:
-        for policy, config_overrides in strategies_to_run:
-            summary = test_strategy(policy, config_overrides, output_dir)
+        for policy, config_overrides, dir_suffix in strategies_to_run:
+            summary = test_strategy(policy, config_overrides, output_dir, dir_suffix)
             summaries.append(summary)
 
         # Save comparison
