@@ -256,13 +256,19 @@ class SchedulerEngine:
                 if not isinstance(bounds, Mapping):
                     continue
                 entries: Dict[str, int] = {}
-                for key in ("min", "max"):
-                    if key not in bounds or bounds[key] is None:
-                        continue
-                    try:
-                        entries[key] = int(bounds[key])
-                    except (TypeError, ValueError):
-                        continue
+                for target_key, candidates in (
+                    ("min", ("min", "minReplicas", "min_replicas")),
+                    ("max", ("max", "maxReplicas", "max_replicas")),
+                ):
+                    for candidate in candidates:
+                        value = bounds.get(candidate)
+                        if value is None:
+                            continue
+                        try:
+                            entries[target_key] = int(value)
+                            break
+                        except (TypeError, ValueError):
+                            continue
                 if entries:
                     self.component_bounds[comp] = entries
         self.config = config or self._load_config()
