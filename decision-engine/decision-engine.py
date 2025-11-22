@@ -52,6 +52,9 @@ SCHEDULER_CONFIG_KEYS = {
     "carbonTarget",     # Carbon intensity target
     "carbonTimeout",    # Timeout for carbon data fetching
     "carbonCacheTTL",   # TTL for cached carbon data
+    "throttleMin",      # Minimum throttle factor (0.0-1.0)
+    "throttleIntensityFloor",    # Carbon intensity floor for throttling (gCO2/kWh)
+    "throttleIntensityCeiling",  # Carbon intensity ceiling for throttling (gCO2/kWh)
 }
 
 

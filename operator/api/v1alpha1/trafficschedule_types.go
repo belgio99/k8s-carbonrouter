@@ -66,6 +66,12 @@ type SchedulerConfigSpec struct {
 	CarbonTimeout *int32 `json:"carbonTimeout,omitempty"`
 	// +optional
 	CarbonCacheTTL *int32 `json:"carbonCacheTTL,omitempty"`
+	// +optional
+	ThrottleMin *string `json:"throttleMin,omitempty"`
+	// +optional
+	ThrottleIntensityFloor *string `json:"throttleIntensityFloor,omitempty"`
+	// +optional
+	ThrottleIntensityCeiling *string `json:"throttleIntensityCeiling,omitempty"`
 }
 
 // TargetConfig defines the configuration for the target deployments.
