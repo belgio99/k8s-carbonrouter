@@ -285,6 +285,10 @@ class PolicyResult:
     diagnostics: PolicyDiagnostics
 
 
+GREEN_BLEND_WEIGHT = _clamp(float(os.getenv("THROTTLE_GREEN_BLEND", "0.6")), 0.0, 1.0)
+GREEN_OVERRIDE_THRESHOLD = _clamp(float(os.getenv("THROTTLE_GREEN_OVERRIDE_THRESHOLD", "0.99")), 0.0, 1.0)
+
+
 @dataclass
 class ScalingDirective:
     """
@@ -362,7 +366,14 @@ class ScalingDirective:
         else:
             intensity_ratio = 1.0
 
-        throttle = _clamp(min(credits_ratio, intensity_ratio), min_throttle, 1.0)
+        throttle_candidate = min(credits_ratio, intensity_ratio)
+        throttle = _clamp(throttle_candidate, min_throttle, 1.0)
+
+        if intensity_ratio >= GREEN_OVERRIDE_THRESHOLD:
+            throttle = 1.0
+        elif intensity_ratio > credits_ratio:
+            blended = credits_ratio + (intensity_ratio - credits_ratio) * GREEN_BLEND_WEIGHT
+            throttle = _clamp(max(throttle, blended), min_throttle, 1.0)
 
         # OPPORTUNITY-AWARE THROTTLING:
         # Look ahead in the forecast. If a significantly greener window is approaching,
