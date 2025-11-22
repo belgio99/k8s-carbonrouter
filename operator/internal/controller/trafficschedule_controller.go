@@ -425,6 +425,9 @@ func buildSchedulerConfigPayload(spec schedulingv1alpha1.TrafficScheduleSpec, fl
 	if s.CarbonCacheTTL != nil {
 		cfg["carbonCacheTTL"] = *s.CarbonCacheTTL
 	}
+	assignFloat(cfg, "throttleMin", s.ThrottleMin)
+	assignFloat(cfg, "throttleIntensityFloor", s.ThrottleIntensityFloor)
+	assignFloat(cfg, "throttleIntensityCeiling", s.ThrottleIntensityCeiling)
 
 	components := map[string]map[string]int32{}
 	if bounds := replicaBounds(spec.Router); bounds != nil {

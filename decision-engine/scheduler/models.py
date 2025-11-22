@@ -236,6 +236,12 @@ class SchedulerConfig:
             self.carbon_timeout = float(overrides["carbonTimeout"])
         if "carbonCacheTTL" in overrides and overrides["carbonCacheTTL"] is not None:
             self.carbon_cache_ttl = float(overrides["carbonCacheTTL"])
+        if "throttleMin" in overrides and overrides["throttleMin"] is not None:
+            self.throttle_min = float(overrides["throttleMin"])
+        if "throttleIntensityFloor" in overrides and overrides["throttleIntensityFloor"] is not None:
+            self.throttle_intensity_floor = float(overrides["throttleIntensityFloor"])
+        if "throttleIntensityCeiling" in overrides and overrides["throttleIntensityCeiling"] is not None:
+            self.throttle_intensity_ceiling = float(overrides["throttleIntensityCeiling"])
 
     def as_dict(self) -> Dict[str, object]:
         return {

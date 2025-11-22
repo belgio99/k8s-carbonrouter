@@ -233,6 +233,12 @@ spec:
                     type: string
                   targetError:
                     type: string
+                  throttleIntensityCeiling:
+                    type: string
+                  throttleIntensityFloor:
+                    type: string
+                  throttleMin:
+                    type: string
                   validFor:
                     format: int32
                     type: integer
