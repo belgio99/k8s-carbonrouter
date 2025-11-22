@@ -6,7 +6,7 @@ spec:
   target:
     autoscaling:
       minReplicaCount: 0
-      maxReplicaCount: 8
+      maxReplicaCount: 12
       cooldownPeriod: 120
       cpuUtilization: 90
   router:
@@ -27,7 +27,7 @@ spec:
     debug: true
     autoscaling:
       minReplicaCount: 0
-      maxReplicaCount: 8
+      maxReplicaCount: 12
       cooldownPeriod: 120
       cpuUtilization: 90
     resources:
@@ -39,15 +39,15 @@ spec:
         memory: "512Mi"
   scheduler:
     targetError: "0.15"
-    creditMin: "-1.0"
-    creditMax: "1.0"
+    creditMin: "-2.0"
+    creditMax: "2.0"
     creditWindow: 10
     policy: forecast-aware
     validFor: 300
     discoveryInterval: 30
-    carbonTarget: "300"
+    carbonTarget: "150"
     carbonTimeout: 5000
     carbonCacheTTL: 300
-    throttleMin: "0.05"
-    throttleIntensityFloor: "100.0"
+    throttleMin: "0.01"
+    throttleIntensityFloor: "250.0"
     throttleIntensityCeiling: "300.0"
