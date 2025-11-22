@@ -22,7 +22,8 @@ import logging
 import os
 import signal
 import time
-from typing import Any, Dict, Coroutine
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, Coroutine
 
 import aio_pika
 from aio_pika import ExchangeType
@@ -66,6 +67,19 @@ EXCHANGE_NAME: str = QUEUE_PREFIX
 # Per-queue concurrency (can be tuned by ENV)
 CONCURRENCY: int = int(os.getenv("CONCURRENCY_PER_QUEUE", "32"))
 
+CONSUMER_THROTTLE_ENABLED: bool = (
+    os.getenv("CONSUMER_THROTTLE_ENABLED", "true").lower() == "true"
+)
+CONSUMER_THROTTLE_REFRESH_SECONDS: float = float(
+    os.getenv("CONSUMER_THROTTLE_REFRESH_SECONDS", "1.5")
+)
+CONSUMER_THROTTLE_EXPONENT: float = float(
+    os.getenv("CONSUMER_THROTTLE_EXPONENT", "3.0")
+)
+CONSUMER_THROTTLE_MIN_INFLIGHT: int = int(
+    os.getenv("CONSUMER_THROTTLE_MIN_INFLIGHT", "1")
+)
+
 # ──────────────────────────────────────────────────────────────
 # Prometheus metrics
 # ──────────────────────────────────────────────────────────────
@@ -84,6 +98,120 @@ PROCESSED_HTTP_REQUESTS = Counter(
     "HTTP requests processed after buffering",
     ["method", "status", "qtype", "flavour", "forced"],
 )
+
+PROCESSING_THROTTLE_FACTOR = Gauge(
+    "consumer_processing_throttle_factor",
+    "Throttle factor read from the TrafficSchedule status",
+    ["scope"],
+)
+PROCESSING_THROTTLE_LIMIT = Gauge(
+    "consumer_processing_inflight_limit",
+    "Current in-flight cap enforced by the consumer-side throttle",
+    ["scope"],
+)
+PROCESSING_THROTTLE_INFLIGHT = Gauge(
+    "consumer_processing_inflight_active",
+    "Active in-flight forwards tracked by the consumer-side throttle",
+    ["scope"],
+)
+
+
+class ProcessingThrottle:
+    """Controls the amount of in-flight work based on scheduler throttle."""
+
+    def __init__(
+        self,
+        schedule: TrafficScheduleManager,
+        per_queue_concurrency: int,
+    ) -> None:
+        self._schedule = schedule
+        self._per_queue_concurrency = max(1, per_queue_concurrency)
+        self._refresh_seconds = max(0.5, CONSUMER_THROTTLE_REFRESH_SECONDS)
+        self._exponent = max(1.0, CONSUMER_THROTTLE_EXPONENT)
+        self._min_inflight = max(1, CONSUMER_THROTTLE_MIN_INFLIGHT)
+        self._condition = asyncio.Condition()
+        self._limit = self._per_queue_concurrency
+        self._inflight = 0
+        self._factor = 1.0
+        self._task: asyncio.Task | None = None
+        PROCESSING_THROTTLE_FACTOR.labels("global").set(self._factor)
+        PROCESSING_THROTTLE_LIMIT.labels("global").set(self._limit)
+        PROCESSING_THROTTLE_INFLIGHT.labels("global").set(0)
+
+    def start(self) -> None:
+        if self._task is None:
+            self._task = asyncio.create_task(self._refresh_loop())
+
+    async def stop(self) -> None:
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+    @asynccontextmanager
+    async def slot(self) -> AsyncGenerator[None, None]:
+        await self._acquire()
+        try:
+            yield
+        finally:
+            await self._release()
+
+    async def _acquire(self) -> None:
+        async with self._condition:
+            while self._inflight >= self._limit:
+                await self._condition.wait()
+            self._inflight += 1
+            PROCESSING_THROTTLE_INFLIGHT.labels("global").set(self._inflight)
+
+    async def _release(self) -> None:
+        async with self._condition:
+            self._inflight = max(0, self._inflight - 1)
+            PROCESSING_THROTTLE_INFLIGHT.labels("global").set(self._inflight)
+            self._condition.notify(1)
+
+    async def _refresh_loop(self) -> None:
+        while True:
+            try:
+                await self._recompute_limit()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.error("Throttle refresh failed: %s", exc)
+            await asyncio.sleep(self._refresh_seconds)
+
+    async def _recompute_limit(self) -> None:
+        schedule = await self._schedule.snapshot()
+        raw_factor = schedule.get("processingThrottle", 1.0)
+        try:
+            factor = float(raw_factor)
+        except (TypeError, ValueError):
+            factor = 1.0
+        factor = max(0.0, min(1.0, factor))
+        flavours = schedule.get("flavours") or []
+        flavour_count = max(1, len(flavours))
+        max_concurrency = self._per_queue_concurrency * flavour_count
+        limit_float = max_concurrency * (factor ** self._exponent)
+        if factor >= 0.999:
+            new_limit = max_concurrency
+        else:
+            new_limit = max(self._min_inflight, int(round(limit_float)))
+        async with self._condition:
+            changed = new_limit != self._limit or abs(factor - self._factor) > 1e-3
+            self._factor = factor
+            self._limit = max(self._min_inflight, new_limit)
+            PROCESSING_THROTTLE_FACTOR.labels("global").set(self._factor)
+            PROCESSING_THROTTLE_LIMIT.labels("global").set(self._limit)
+            if changed:
+                self._condition.notify_all()
+        if changed:
+            log.info(
+                "Consumer throttle updated: factor=%.3f limit=%d (max=%d)",
+                self._factor,
+                self._limit,
+                max_concurrency,
+            )
 MAX_RETRIES          = 5
 BACKOFF_FIRST_DELAY  = 1.0
 BACKOFF_FACTOR       = 2
@@ -106,6 +234,7 @@ class FlavourWorkerManager:
         exchange: aio_pika.Exchange,
         channel_pool: Pool,
         http_client: httpx.AsyncClient,
+        processing_throttle: ProcessingThrottle | None = None,
         poll_interval: int = 10,
     ) -> None:
         self._schedule = schedule
@@ -114,6 +243,7 @@ class FlavourWorkerManager:
         self._channel_pool = channel_pool
         self._http_client = http_client
         self._poll_interval = poll_interval
+        self._processing_throttle = processing_throttle
         self._tasks: dict[str, list[asyncio.Task]] = {}
         self._lock = asyncio.Lock()
 
@@ -143,6 +273,7 @@ class FlavourWorkerManager:
                             flavour,
                             self._channel_pool,
                             self._http_client,
+                            self._processing_throttle,
                         ),
                     )
                 ]
@@ -275,6 +406,7 @@ async def consume_buffer_queue(
     flavour: str,
     channel_pool: Pool,
     http_client: httpx.AsyncClient,
+    processing_throttle: ProcessingThrottle | None = None,
 ) -> None:
     """
     Consume <prefix>.queue.<flavour> continuously.
@@ -289,8 +421,7 @@ async def consume_buffer_queue(
 
     sem = asyncio.Semaphore(CONCURRENCY)
 
-    async def _on_message(message: aio_pika.IncomingMessage) -> None:
-        async with sem:
+    async def _handle_message(message: aio_pika.IncomingMessage) -> None:
             flav_hdr = message.headers.get("flavour", flavour)
             q_type = message.headers.get("q_type", "queue")
             status, dt_sec, method, forced, delivered = await forward_and_reply(
@@ -306,6 +437,14 @@ async def consume_buffer_queue(
                     str(forced),
                 ).inc()
             HTTP_FORWARD_LAT.labels(flav_hdr).observe(dt_sec)
+
+    async def _on_message(message: aio_pika.IncomingMessage) -> None:
+        async with sem:
+            if processing_throttle is not None:
+                async with processing_throttle.slot():
+                    await _handle_message(message)
+            else:
+                await _handle_message(message)
 
     await queue.consume(_on_message, no_ack=False)
     await asyncio.Event().wait()
@@ -356,6 +495,18 @@ async def main() -> None:
         timeout=httpx.Timeout(10.0),
     )
 
+    processing_throttle: ProcessingThrottle | None = None
+    if CONSUMER_THROTTLE_ENABLED:
+        processing_throttle = ProcessingThrottle(schedule_mgr, CONCURRENCY)
+        processing_throttle.start()
+        log.info(
+            "Consumer-side throttling enabled (refresh=%.1fs exponent=%.2f)",
+            CONSUMER_THROTTLE_REFRESH_SECONDS,
+            CONSUMER_THROTTLE_EXPONENT,
+        )
+    else:
+        log.info("Consumer-side throttling disabled via CONSUMER_THROTTLE_ENABLED")
+
     # Spawn workers per flavour
     flavour_manager = FlavourWorkerManager(
         schedule_mgr,
@@ -363,6 +514,7 @@ async def main() -> None:
         exchange,
         channel_pool,
         http_client,
+        processing_throttle=processing_throttle,
     )
     await flavour_manager.sync_from_schedule()
     asyncio.create_task(flavour_manager.reconcile_loop())
@@ -385,6 +537,8 @@ async def main() -> None:
 
     await listen_connection.close()
     await http_client.aclose()
+    if processing_throttle is not None:
+        await processing_throttle.stop()
     await schedule_mgr.close()
 
 
