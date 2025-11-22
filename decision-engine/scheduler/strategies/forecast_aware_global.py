@@ -150,8 +150,11 @@ class ForecastAwareGlobalPolicy(CreditGreedyPolicy):
 
         # Update cumulative emissions tracking based on commanded weights
         # Calculate weighted average carbon intensity from this evaluation
+        # We treat flavour.carbon_intensity as a relative power factor (e.g. 1.0 for p100, 0.3 for p30)
+        # So actual emissions = weight * power_factor * grid_intensity
+        grid_intensity = forecast.intensity_now if forecast and forecast.intensity_now else 0.0
         weighted_carbon = sum(
-            weights.get(f.name, 0.0) * (f.carbon_intensity or 0.0)
+            weights.get(f.name, 0.0) * (f.carbon_intensity or 0.0) * grid_intensity
             for f in flavours_list
         )
         self._cumulative_carbon += weighted_carbon
