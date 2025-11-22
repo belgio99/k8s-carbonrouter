@@ -497,11 +497,11 @@ async def consume_buffer_queue(
             HTTP_FORWARD_LAT.labels(effective_flavour).observe(dt_sec)
 
     async def _on_message(message: aio_pika.IncomingMessage) -> None:
-        async with sem:
-            if processing_throttle is not None:
-                async with processing_throttle.slot():
-                    await _handle_message(message)
-            else:
+        if processing_throttle is not None:
+            async with processing_throttle.slot():
+                await _handle_message(message)
+        else:
+            async with sem:
                 await _handle_message(message)
 
     await queue.consume(_on_message, no_ack=False)
