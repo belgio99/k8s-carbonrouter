@@ -183,7 +183,11 @@ class ProcessingThrottle:
 
     async def _recompute_limit(self) -> None:
         schedule = await self._schedule.snapshot()
-        raw_factor = schedule.get("processingThrottle", 1.0)
+        processing = schedule.get("processing", {})
+        if isinstance(processing, dict):
+            raw_factor = processing.get("throttle", 1.0)
+        else:
+            raw_factor = 1.0
         try:
             factor = float(raw_factor)
         except (TypeError, ValueError):
@@ -497,11 +501,11 @@ async def consume_buffer_queue(
             HTTP_FORWARD_LAT.labels(effective_flavour).observe(dt_sec)
 
     async def _on_message(message: aio_pika.IncomingMessage) -> None:
-        if processing_throttle is not None:
-            async with processing_throttle.slot():
-                await _handle_message(message)
-        else:
-            async with sem:
+        async with sem:
+            if processing_throttle is not None:
+                async with processing_throttle.slot():
+                    await _handle_message(message)
+            else:
                 await _handle_message(message)
 
     await queue.consume(_on_message, no_ack=False)
