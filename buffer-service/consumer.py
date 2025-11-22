@@ -79,10 +79,10 @@ HTTP_FORWARD_LAT = Histogram(
     "Time spent forwarding the HTTP request",
     ["flavour"],
 )
-HTTP_FORWARD_COUNT = Counter(
-    "consumer_http_requests_total",
-    "Requests sent to the target service",
-    ["status", "flavour"],
+PROCESSED_HTTP_REQUESTS = Counter(
+    "router_http_requests_total",
+    "HTTP requests processed after buffering",
+    ["method", "status", "qtype", "flavour", "forced"],
 )
 MAX_RETRIES          = 5
 BACKOFF_FIRST_DELAY  = 1.0
@@ -203,15 +203,22 @@ async def forward_and_reply(
     flavour: str,
     channel_pool: Pool,
     http_client: httpx.AsyncClient,
-) -> tuple[int, float]:
+) -> tuple[int, float, str, bool, bool]:
     """
     Execute the HTTP request embedded in `message` and publish the response
-    to `message.reply_to`. Returns (status_code, elapsed_seconds).
+    to `message.reply_to`.
+
+    Returns a tuple (status_code, elapsed_seconds, method, forced, delivered)
+    so callers can update metrics only when the request is fully processed.
     """
     start_ts = time.perf_counter()
+    method = "UNKNOWN"
+    forced = False
 
     try:
         payload: Dict[str, Any] = json.loads(message.body)
+        method = str(payload.get("method", method))
+        forced = bool(payload.get("forced", forced))
         debug(
             f"Payload: method={payload.get('method')} path={payload.get('path')} headers={payload.get('headers')}"
         )
@@ -237,7 +244,7 @@ async def forward_and_reply(
         await message.nack(requeue=True)
 
         debug(f"Error processing message: {exc}")
-        return 500, time.perf_counter() - start_ts
+        return 500, time.perf_counter() - start_ts, method, forced, False
 
     # Publish RPC reply using a pooled channel (avoids single-channel lock)
     async with channel_pool.acquire() as publish_ch:
@@ -257,7 +264,7 @@ async def forward_and_reply(
     await message.ack()
 
     elapsed = time.perf_counter() - start_ts
-    return status_code, elapsed
+    return status_code, elapsed, method, forced, True
 
 # ──────────────────────────────────────────────────────────────
 # Worker – buffer path (queue.*)  pausable via TrafficSchedule
@@ -285,11 +292,19 @@ async def consume_buffer_queue(
     async def _on_message(message: aio_pika.IncomingMessage) -> None:
         async with sem:
             flav_hdr = message.headers.get("flavour", flavour)
-            status, dt_sec = await forward_and_reply(
+            q_type = message.headers.get("q_type", "queue")
+            status, dt_sec, method, forced, delivered = await forward_and_reply(
                 message, flav_hdr, channel_pool, http_client
             )
             MSG_CONSUMED.labels("queue", flav_hdr).inc()
-            HTTP_FORWARD_COUNT.labels(str(status), flav_hdr).inc()
+            if delivered:
+                PROCESSED_HTTP_REQUESTS.labels(
+                    method,
+                    str(status),
+                    q_type,
+                    flav_hdr,
+                    str(forced),
+                ).inc()
             HTTP_FORWARD_LAT.labels(flav_hdr).observe(dt_sec)
 
     await queue.consume(_on_message, no_ack=False)

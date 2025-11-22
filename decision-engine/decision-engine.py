@@ -215,12 +215,12 @@ def _as_int(value: Any) -> Optional[int]:
 
 def query_router_metrics(namespace: str) -> Dict[str, int]:
     """
-    Query Prometheus for router metrics (per-flavour request deltas).
+    Query Prometheus for per-flavour request deltas.
     
-    This function queries the router_http_requests_total Counter metric
-    and calculates the increase over the polling interval using Prometheus's
-    increase() function. This is more idiomatic than having the router 
-    calculate deltas manually.
+    This function queries the consumer-exported router_http_requests_total
+    counter (requests completed after queueing) and calculates the increase
+    over the polling interval using Prometheus's increase() function. This is
+    more idiomatic than having the router calculate deltas manually.
     
     Args:
         namespace: Kubernetes namespace to query router metrics from

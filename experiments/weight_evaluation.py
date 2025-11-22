@@ -315,9 +315,9 @@ def get_carbon_intensity() -> float:
 
 
 def get_request_counts() -> Dict[str, float]:
-    """Get request counts per precision flavour from router metrics."""
+    """Get request counts per precision flavour from consumer metrics."""
     try:
-        response = requests.get(ROUTER_METRICS_URL, timeout=5)
+        response = requests.get(CONSUMER_METRICS_URL, timeout=5)
         if response.status_code != 200:
             return {}
 

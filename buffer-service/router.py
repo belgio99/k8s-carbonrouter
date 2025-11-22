@@ -48,9 +48,9 @@ RPC_TIMEOUT_SEC: float = float(os.getenv("RPC_TIMEOUT_SEC", "60"))
 # ────────────────────────────────────
 # Prometheus metrics
 # ────────────────────────────────────
-HTTP_REQUESTS = Counter(
-    "router_http_requests_total",
-    "HTTP requests",
+INGRESS_HTTP_REQUESTS = Counter(
+    "router_ingress_http_requests_total",
+    "HTTP requests observed at the router ingress",
     ["method", "status", "qtype", "flavour", "forced"],
 )
 
@@ -211,6 +211,7 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
             "query": str(request.query_params),
             "headers": headers,
             "body": b64enc(await request.body()),
+            "forced": bool(forced_flavour),
         }
 
         # ─── publish ───
@@ -253,7 +254,7 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         except asyncio.TimeoutError as exc:
             rabbit_state["pending"].pop(correlation_id, None)
             HTTP_LATENCY.labels(q_type, flavour).observe(time.perf_counter() - start_ts)
-            HTTP_REQUESTS.labels(
+            INGRESS_HTTP_REQUESTS.labels(
                 request.method, "504", q_type, flavour, bool(forced_flavour)
             ).inc()
             raise HTTPException(status_code=504, detail="Upstream timeout") from exc
@@ -261,7 +262,7 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
         response_data = json.loads(rabbit_msg.body)
 
         status_code = int(response_data.get("status", 200))
-        HTTP_REQUESTS.labels(
+        INGRESS_HTTP_REQUESTS.labels(
             request.method, str(status_code), q_type, flavour, bool(forced_flavour)
         ).inc()
         HTTP_LATENCY.labels(q_type, flavour).observe(time.perf_counter() - start_ts)

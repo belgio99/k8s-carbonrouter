@@ -193,7 +193,7 @@ def _sum_series(samples: Iterable[Dict[str, Any]], metric: str, labels: Dict[str
     return total
 
 
-def extract_router_counts(metrics: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+def extract_processed_counts(metrics: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
     counts: Dict[str, float] = defaultdict(float)
     for sample in metrics.get("router_http_requests_total", []):
         if sample["labels"].get("qtype") != "queue":
@@ -447,7 +447,7 @@ def main() -> None:
         (policy_dir / "metrics_before_router.json").write_text(json.dumps(baseline.router, indent=2))
         (policy_dir / "metrics_before_consumer.json").write_text(json.dumps(baseline.consumer, indent=2))
         (policy_dir / "metrics_before_engine.json").write_text(json.dumps(baseline.engine, indent=2))
-        router_counts_before = extract_router_counts(baseline.router)
+        processed_counts_before = extract_processed_counts(baseline.consumer)
         policy_choices_before = _sum_series(
             baseline.engine.get("scheduler_policy_choice_total", []),
             "scheduler_policy_choice_total",
@@ -476,15 +476,15 @@ def main() -> None:
                 "engine_reported_precision",
             ])
 
-            last_counts = router_counts_before
+            last_counts = processed_counts_before
             next_sample = time.time()
             start_time = next_sample
             while True:
                 now = time.time()
                 if now >= next_sample or locust_proc.poll() is not None:
-                    router_metrics = scrape_metrics(args.router_metrics)
+                    consumer_metrics = scrape_metrics(args.consumer_metrics)
                     engine_metrics = scrape_metrics(args.engine_metrics)
-                    counts = extract_router_counts(router_metrics)
+                    counts = extract_processed_counts(consumer_metrics)
                     delta = diff_counters(counts, last_counts)
                     credit_balance = extract_engine_value(
                         engine_metrics,
@@ -525,8 +525,8 @@ def main() -> None:
         schedule_after = fetch_schedule(args.namespace, args.schedule)
         (policy_dir / "schedule_after.json").write_text(json.dumps(schedule_after, indent=2))
 
-        router_counts_after = extract_router_counts(final_metrics.router)
-        counts_delta = diff_counters(router_counts_after, router_counts_before)
+        processed_counts_after = extract_processed_counts(final_metrics.consumer)
+        counts_delta = diff_counters(processed_counts_after, processed_counts_before)
         total_requests = safe_total(counts_delta)
 
         credit_balance = extract_engine_value(
