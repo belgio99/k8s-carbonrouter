@@ -29,16 +29,16 @@ class ForecastAwarePolicy(CreditGreedyPolicy):
         trend = forecast.intensity_next - forecast.intensity_now
         
         # DAMPING: Ignore small trends to avoid jitter (and reduce responsiveness)
-        if abs(trend) < 10.0:
+        if abs(trend) < 15.0:
             return base
 
         adjustment = 0.0
-        # NERF: Reduced sensitivity (0.5x) and lower cap (0.3) to make it less effective
+        # NERF: Reduced sensitivity (0.25x) and lower cap (0.15) to make it less effective
         # compared to the global strategy. It will be more "sluggish".
         if trend > 0:  # Carbon RISING → SPEND quality NOW before it gets worse (increase p100)
-            adjustment = -min(0.3, trend / max(forecast.intensity_now, 1e-6) * 0.5)  # NEGATIVE
+            adjustment = -min(0.15, trend / max(forecast.intensity_now, 1e-6) * 0.25)  # NEGATIVE
         elif trend < 0:  # Carbon FALLING → SAVE quality for cleaner future (decrease p100)
-            adjustment = min(0.3, abs(trend) / max(forecast.intensity_now, 1e-6) * 0.5)  # POSITIVE
+            adjustment = min(0.15, abs(trend) / max(forecast.intensity_now, 1e-6) * 0.25)  # POSITIVE
 
         # Identify baseline (highest precision) flavour, not highest-weighted flavour
         sorted_flavours = sorted(flavours_list, key=lambda f: f.precision, reverse=True)
