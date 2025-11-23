@@ -574,7 +574,14 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
                 # Calculate delta
                 delta_requests = {}
                 for flavour in set(list(current_requests.keys()) + list(last_requests.keys())):
-                    delta_requests[flavour] = current_requests.get(flavour, 0) - last_requests.get(flavour, 0)
+                    curr = current_requests.get(flavour, 0)
+                    last = last_requests.get(flavour, 0)
+                    if curr < last:
+                        # Counter reset (pod restart)
+                        delta = curr
+                    else:
+                        delta = curr - last
+                    delta_requests[flavour] = delta
 
                 total_delta = sum(delta_requests.values())
 
