@@ -178,8 +178,10 @@ class ProcessingThrottle:
         # total_time = active_time / target
         # sleep = total_time - active_time = active_time * (1/target - 1)
         target = self._target_concurrency
-        if 0.0 < target < 0.999:
-            sleep_time = duration * (1.0 / target - 1.0)
+        if target < 0.999:
+            # Avoid division by zero if target is 0.0
+            effective_target = max(target, 1e-6)
+            sleep_time = duration * (1.0 / effective_target - 1.0)
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
 
