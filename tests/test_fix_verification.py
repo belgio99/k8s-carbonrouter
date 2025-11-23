@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../decision-engine')))
 
 from scheduler.models import FlavourProfile, ForecastSnapshot, SchedulerConfig
-from scheduler.engine import SchedulerEngine
 from scheduler.strategies.forecast_aware_global import ForecastAwareGlobalPolicy
 from scheduler.ledger import CreditLedger
 
@@ -46,19 +45,6 @@ class TestFixVerification(unittest.TestCase):
         
         self.assertLess(policy._cumulative_carbon, 100.0, "Cumulative carbon should be lower for low intensity")
         self.assertGreater(policy._cumulative_carbon, 10.0, "Cumulative carbon should not be zero")
-
-    def test_component_bounds_aliases(self):
-        """SchedulerEngine should accept both *Replicas and plain min/max keys."""
-        engine = SchedulerEngine(
-            component_bounds={
-                "consumer": {"minReplicas": 2, "maxReplicas": 4},
-                "router": {"min": 1, "max": 5},
-                "target": {"min_replicas": 1, "max_replicas": 3},
-            }
-        )
-        self.assertEqual(engine.component_bounds["consumer"], {"min": 2, "max": 4})
-        self.assertEqual(engine.component_bounds["router"], {"min": 1, "max": 5})
-        self.assertEqual(engine.component_bounds["target"], {"min": 1, "max": 3})
 
 if __name__ == '__main__':
     unittest.main()

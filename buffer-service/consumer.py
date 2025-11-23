@@ -136,6 +136,7 @@ class ProcessingThrottle:
         self._limit = self._per_queue_concurrency
         self._inflight = 0
         self._factor = 1.0
+        self._target_concurrency = float(self._limit)
         self._task: asyncio.Task | None = None
         PROCESSING_THROTTLE_FACTOR.labels("global").set(self._factor)
         PROCESSING_THROTTLE_LIMIT.labels("global").set(self._limit)
@@ -156,10 +157,12 @@ class ProcessingThrottle:
     @asynccontextmanager
     async def slot(self) -> AsyncGenerator[None, None]:
         await self._acquire()
+        start_ts = time.perf_counter()
         try:
             yield
         finally:
-            await self._release()
+            duration = time.perf_counter() - start_ts
+            await self._release(duration)
 
     async def _acquire(self) -> None:
         async with self._condition:
@@ -168,7 +171,18 @@ class ProcessingThrottle:
             self._inflight += 1
             PROCESSING_THROTTLE_INFLIGHT.labels("global").set(self._inflight)
 
-    async def _release(self) -> None:
+    async def _release(self, duration: float = 0.0) -> None:
+        # If target concurrency is < 1, we need to artificially extend the duration
+        # to enforce the low duty cycle.
+        # target = active_time / total_time
+        # total_time = active_time / target
+        # sleep = total_time - active_time = active_time * (1/target - 1)
+        target = self._target_concurrency
+        if 0.0 < target < 0.999:
+            sleep_time = duration * (1.0 / target - 1.0)
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+
         async with self._condition:
             self._inflight = max(0, self._inflight - 1)
             PROCESSING_THROTTLE_INFLIGHT.labels("global").set(self._inflight)
@@ -217,6 +231,7 @@ class ProcessingThrottle:
             changed = new_limit != self._limit or abs(factor - self._factor) > 1e-3
             self._factor = factor
             self._limit = max(self._min_inflight, new_limit)
+            self._target_concurrency = limit_float
             PROCESSING_THROTTLE_FACTOR.labels("global").set(self._factor)
             PROCESSING_THROTTLE_LIMIT.labels("global").set(self._limit)
             if changed:
