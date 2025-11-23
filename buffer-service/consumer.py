@@ -67,6 +67,9 @@ EXCHANGE_NAME: str = QUEUE_PREFIX
 # Per-queue concurrency (can be tuned by ENV)
 CONCURRENCY: int = int(os.getenv("CONCURRENCY_PER_QUEUE", "32"))
 
+# Minimum request duration (simulation for fast targets)
+MIN_REQUEST_DURATION: float = float(os.getenv("MIN_REQUEST_DURATION", "0.0"))
+
 CONSUMER_THROTTLE_ENABLED: bool = (
     os.getenv("CONSUMER_THROTTLE_ENABLED", "true").lower() == "true"
 )
@@ -454,6 +457,13 @@ async def forward_and_reply(
     await message.ack()
 
     elapsed = time.perf_counter() - start_ts
+    
+    # Enforce minimum duration if configured
+    if elapsed < MIN_REQUEST_DURATION:
+        sleep_time = MIN_REQUEST_DURATION - elapsed
+        await asyncio.sleep(sleep_time)
+        elapsed = time.perf_counter() - start_ts
+
     return status_code, elapsed, method, forced, True, flavour
 
 # ──────────────────────────────────────────────────────────────

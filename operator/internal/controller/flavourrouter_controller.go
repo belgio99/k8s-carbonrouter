@@ -627,6 +627,7 @@ func (r *FlavourRouterReconciler) ensureBufferServiceDeployment(ctx context.Cont
 		extraEnv = []corev1.EnvVar{
 			{Name: "TARGET_SVC_SCHEME", Value: "http"},
 			{Name: "TARGET_SVC_PORT", Value: "80"},
+			{Name: "MIN_REQUEST_DURATION", Value: "0.02"},
 		}
 	}
 
