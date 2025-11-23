@@ -96,6 +96,11 @@ HTTP_FORWARD_LAT = Histogram(
     "Time spent forwarding the HTTP request",
     ["flavour"],
 )
+QUEUE_LATENCY = Histogram(
+    "consumer_queue_duration_seconds",
+    "Time spent in the queue",
+    ["flavour"],
+)
 PROCESSED_HTTP_REQUESTS = Counter(
     "router_http_requests_total",
     "HTTP requests processed after buffering",
@@ -547,6 +552,17 @@ async def consume_buffer_queue(
                 http_client,
                 schedule_mgr,
             )
+            
+            # Measure queue latency
+            try:
+                payload = json.loads(message.body)
+                ts_ingress = payload.get("ts_ingress")
+                if ts_ingress:
+                    queue_duration = time.time() - float(ts_ingress)
+                    QUEUE_LATENCY.labels(effective_flavour).observe(queue_duration)
+            except Exception:
+                pass
+
             MSG_CONSUMED.labels("queue", queue_flavour).inc()
             if delivered:
                 PROCESSED_HTTP_REQUESTS.labels(

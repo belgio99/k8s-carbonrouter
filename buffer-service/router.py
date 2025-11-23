@@ -212,6 +212,7 @@ def create_app(schedule_manager: TrafficScheduleManager) -> FastAPI:
             "headers": headers,
             "body": b64enc(await request.body()),
             "forced": bool(forced_flavour),
+            "ts_ingress": time.time(),
         }
 
         # ─── publish ───
