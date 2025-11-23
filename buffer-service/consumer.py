@@ -183,11 +183,20 @@ class ProcessingThrottle:
 
     async def _recompute_limit(self) -> None:
         schedule = await self._schedule.snapshot()
-        processing = schedule.get("processing", {})
-        if isinstance(processing, dict):
-            raw_factor = processing.get("throttle", 1.0)
-        else:
+        
+        # 1. Try top-level "processingThrottle" (operator CR status format)
+        raw_factor = schedule.get("processingThrottle")
+        
+        # 2. Fallback to nested "processing" -> "throttle" (decision engine API format)
+        if raw_factor is None:
+            processing = schedule.get("processing", {})
+            if isinstance(processing, dict):
+                raw_factor = processing.get("throttle")
+
+        # 3. Default to 1.0 if missing
+        if raw_factor is None:
             raw_factor = 1.0
+
         try:
             factor = float(raw_factor)
         except (TypeError, ValueError):

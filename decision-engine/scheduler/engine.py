@@ -256,17 +256,15 @@ class SchedulerEngine:
                 if not isinstance(bounds, Mapping):
                     continue
                 entries: Dict[str, int] = {}
-                for target_key, candidates in (
-                    ("min", ("min", "minReplicas", "min_replicas")),
-                    ("max", ("max", "maxReplicas", "max_replicas")),
-                ):
-                    for candidate in candidates:
-                        value = bounds.get(candidate)
-                        if value is None:
-                            continue
+                # Support both short keys (internal) and long keys (from operator)
+                key_map = {
+                    "min": "min", "minReplicas": "min",
+                    "max": "max", "maxReplicas": "max"
+                }
+                for incoming_key, internal_key in key_map.items():
+                    if incoming_key in bounds and bounds[incoming_key] is not None:
                         try:
-                            entries[target_key] = int(value)
-                            break
+                            entries[internal_key] = int(bounds[incoming_key])
                         except (TypeError, ValueError):
                             continue
                 if entries:
