@@ -500,6 +500,7 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
         writer = csv.writer(csvfile)
         writer.writerow([
             "timestamp", "elapsed_seconds", "delta_requests", "mean_precision",
+            "avg_e2e_latency", "avg_queue_latency",
             "credit_balance", "credit_velocity", "engine_avg_precision",
             "carbon_now", "carbon_next",
             "requests_precision_30", "requests_precision_50", "requests_precision_100",
@@ -514,6 +515,12 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
         start_time = time.time()
         samples_collected = 0
         last_requests = baseline_requests.copy()
+        
+        # Latency tracking
+        last_e2e_sum = 0.0
+        last_e2e_count = 0.0
+        last_queue_sum = 0.0
+        last_queue_count = 0.0
 
         while locust_proc.poll() is None:
             try:
@@ -521,7 +528,11 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
                 elapsed = loop_start - start_time
 
                 # Collect metrics
-                consumer_metrics = parse_prometheus_metrics(scrape_metrics(CONSUMER_METRICS_URL))
+                router_metrics_text = scrape_metrics(ROUTER_METRICS_URL)
+                consumer_metrics_text = scrape_metrics(CONSUMER_METRICS_URL)
+                
+                router_metrics = parse_prometheus_metrics(router_metrics_text)
+                consumer_metrics = parse_prometheus_metrics(consumer_metrics_text)
                 engine_metrics = parse_prometheus_metrics(scrape_metrics(ENGINE_METRICS_URL))
 
                 # Get schedule for commanded weights and ceilings
@@ -607,12 +618,35 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
                     elif 'horizon="next"' in key and "scheduler_forecast_intensity" in key:
                         engine_data["carbon_next"] = value
 
+                # Calculate latency averages
+                # Router E2E
+                curr_e2e_sum = router_metrics.get('router_request_duration_seconds_sum', 0.0)
+                curr_e2e_count = router_metrics.get('router_request_duration_seconds_count', 0.0)
+                delta_e2e_sum = curr_e2e_sum - last_e2e_sum
+                delta_e2e_count = curr_e2e_count - last_e2e_count
+                avg_e2e = (delta_e2e_sum / delta_e2e_count) if delta_e2e_count > 0 else 0.0
+                
+                # Consumer Queue
+                curr_queue_sum = consumer_metrics.get('consumer_queue_duration_seconds_sum', 0.0)
+                curr_queue_count = consumer_metrics.get('consumer_queue_duration_seconds_count', 0.0)
+                delta_queue_sum = curr_queue_sum - last_queue_sum
+                delta_queue_count = curr_queue_count - last_queue_count
+                avg_queue = (delta_queue_sum / delta_queue_count) if delta_queue_count > 0 else 0.0
+
+                # Update last values
+                last_e2e_sum = curr_e2e_sum
+                last_e2e_count = curr_e2e_count
+                last_queue_sum = curr_queue_sum
+                last_queue_count = curr_queue_count
+
                 # Write row
                 writer.writerow([
                     datetime.utcnow().isoformat() + "Z",
                     f"{elapsed:.1f}",
                     int(total_delta),
                     f"{weighted_precision:.4f}" if total_delta > 0 else "",
+                    f"{avg_e2e:.4f}",
+                    f"{avg_queue:.4f}",
                     f"{engine_data.get('credit_balance', ''):.4f}" if 'credit_balance' in engine_data else "",
                     f"{engine_data.get('credit_velocity', ''):.4f}" if 'credit_velocity' in engine_data else "",
                     f"{engine_data.get('avg_precision', ''):.4f}" if 'avg_precision' in engine_data else "",
@@ -645,6 +679,7 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
                     print(f"    Sample {samples_collected}: {int(total_delta)} req/period, "
                           f"prec={weighted_precision:.3f}, "
                           f"queue={int(queue_depth_total)}, "
+                          f"lat_e2e={avg_e2e:.3f}s, "
                           f"replicas={int(replicas_consumer+replicas_target)}, "
                           f"throttle={throttle_factor:.2f}")
 
@@ -698,6 +733,8 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
         "requests_by_flavour": requests_delta,
         "mean_precision": weighted_precision_final,
         "mean_carbon_intensity": mean_carbon,
+        "avg_e2e_latency": avg_e2e,
+        "avg_queue_latency": avg_queue,
     }
 
     (policy_dir / "summary.json").write_text(
@@ -709,6 +746,8 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
     print(f"    Total requests: {int(total_requests)}")
     print(f"    Mean precision: {weighted_precision_final:.3f}")
     print(f"    Mean carbon: {mean_carbon:.3f}")
+    print(f"    Avg E2E Latency: {avg_e2e:.3f}s")
+    print(f"    Avg Queue Latency: {avg_queue:.3f}s")
 
     return summary
 
@@ -775,10 +814,12 @@ def main():
             print("\n📊 COMPARISON:")
             print(f"  With throttling:    {summaries[0]['total_requests']:.0f} req, "
                   f"prec={summaries[0]['mean_precision']:.3f}, "
-                  f"carbon={summaries[0]['mean_carbon_intensity']:.3f}")
+                  f"carbon={summaries[0]['mean_carbon_intensity']:.3f}, "
+                  f"lat={summaries[0]['avg_e2e_latency']:.3f}s")
             print(f"  Without throttling: {summaries[1]['total_requests']:.0f} req, "
                   f"prec={summaries[1]['mean_precision']:.3f}, "
-                  f"carbon={summaries[1]['mean_carbon_intensity']:.3f}")
+                  f"carbon={summaries[1]['mean_carbon_intensity']:.3f}, "
+                  f"lat={summaries[1]['avg_e2e_latency']:.3f}s")
 
             if summaries[0]['mean_carbon_intensity'] > 0 and summaries[1]['mean_carbon_intensity'] > 0:
                 carbon_savings = (1 - summaries[0]['mean_carbon_intensity'] / summaries[1]['mean_carbon_intensity']) * 100
