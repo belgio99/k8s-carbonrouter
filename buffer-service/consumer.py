@@ -172,18 +172,40 @@ class ProcessingThrottle:
             PROCESSING_THROTTLE_INFLIGHT.labels("global").set(self._inflight)
 
     async def _release(self, duration: float = 0.0) -> None:
-        # If target concurrency is < 1, we need to artificially extend the duration
-        # to enforce the low duty cycle.
-        # target = active_time / total_time
-        # total_time = active_time / target
-        # sleep = total_time - active_time = active_time * (1/target - 1)
-        target = self._target_concurrency
-        if target < 0.999:
-            # Avoid division by zero if target is 0.0
+        # Adaptive sleep: we loop until we have slept enough OR the target concurrency
+        # changes such that we don't need to sleep anymore.
+        start_time = time.perf_counter()
+        
+        while True:
+            target = self._target_concurrency
+            
+            # If target is high enough, we stop throttling immediately
+            if target >= 0.999:
+                break
+                
+            # Calculate total required duration for the current target
+            # effective_target = active_time / total_time
+            # total_time = active_time / effective_target
+            # required_sleep = total_time - active_time
             effective_target = max(target, 1e-6)
-            sleep_time = duration * (1.0 / effective_target - 1.0)
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+            total_sleep_needed = duration * (1.0 / effective_target - 1.0)
+            
+            # Check how much we have already slept
+            elapsed_sleep = time.perf_counter() - start_time
+            remaining_sleep = total_sleep_needed - elapsed_sleep
+            
+            if remaining_sleep <= 0:
+                break
+                
+            # Wait for the remaining time, but allow interruption if config changes
+            # (notify_all is called on config change)
+            async with self._condition:
+                try:
+                    await asyncio.wait_for(self._condition.wait(), timeout=remaining_sleep)
+                except asyncio.TimeoutError:
+                    # We slept the full duration without interruption
+                    pass
+                # If we woke up (either timeout or notify), loop again to re-check target
 
         async with self._condition:
             self._inflight = max(0, self._inflight - 1)
