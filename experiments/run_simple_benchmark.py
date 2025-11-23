@@ -17,7 +17,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import requests
 
 ALL_POLICIES = ["credit-greedy", "forecast-aware", "forecast-aware-global", "p100", "round-robin", "random"]
@@ -347,19 +347,30 @@ def query_prometheus(query: str) -> float:
     except Exception:
         return 0.0
 
+def _extract_label_value(metric: str, label: str) -> Optional[str]:
+    token = f'{label}="'
+    start = metric.find(token)
+    if start == -1:
+        return None
+    start += len(token)
+    end = metric.find('"', start)
+    if end == -1:
+        return None
+    return metric[start:end]
+
+
 def extract_processed_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, float]:
     """Extract consumer-side request counts per flavour."""
-    requests_by_flavour = {}
+    requests_by_flavour: Dict[str, float] = {}
     for key, value in metrics.items():
-        if (key.startswith('router_http_requests_total{') and
-            'flavour=' in key and
-            'method="POST"' in key and
-            'status="200"' in key):
-            # Extract flavour name from label
-            flavour_start = key.find('flavour="') + 9
-            flavour_end = key.find('"', flavour_start)
-            flavour = key[flavour_start:flavour_end]
-            requests_by_flavour[flavour] = value
+        if not key.startswith('router_http_requests_total{'):
+            continue
+        if 'method="POST"' not in key or 'status="200"' not in key:
+            continue
+        flavour = _extract_label_value(key, 'flavour')
+        if not flavour:
+            continue
+        requests_by_flavour[flavour] = requests_by_flavour.get(flavour, 0.0) + value
     return requests_by_flavour
 
 def get_schedule_status() -> Dict[str, Any]:

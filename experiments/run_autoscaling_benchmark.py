@@ -26,12 +26,12 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import requests
 
 # Test strategies: (policy_name, config_overrides, directory_suffix)
 STRATEGIES = [
-    ("forecast-aware-global", {"throttleMin": "0.05"}, "with-throttle"),  # Normal throttling
+    ("forecast-aware-global", {"throttleMin": "0.00001"}, "with-throttle"),  # Normal throttling
     ("forecast-aware-global", {"throttleMin": "1.0"}, "no-throttle"),  # Throttling disabled
 ]
 
@@ -362,18 +362,30 @@ def get_rabbitmq_queue_depths() -> Dict[str, int]:
     return {"total": 0, "p30": 0, "p50": 0, "p100": 0}
 
 
+def _extract_label_value(metric: str, label: str) -> Optional[str]:
+    token = f'{label}="'
+    start = metric.find(token)
+    if start == -1:
+        return None
+    start += len(token)
+    end = metric.find('"', start)
+    if end == -1:
+        return None
+    return metric[start:end]
+
+
 def extract_processed_requests_by_flavour(metrics: Dict[str, float]) -> Dict[str, float]:
     """Extract consumer-side request counts per flavour."""
-    requests_by_flavour = {}
+    requests_by_flavour: Dict[str, float] = {}
     for key, value in metrics.items():
-        if (key.startswith('router_http_requests_total{') and
-            'flavour=' in key and
-            'method="POST"' in key and
-            'status="200"' in key):
-            flavour_start = key.find('flavour="') + 9
-            flavour_end = key.find('"', flavour_start)
-            flavour = key[flavour_start:flavour_end]
-            requests_by_flavour[flavour] = value
+        if not key.startswith('router_http_requests_total{'):
+            continue
+        if 'method="POST"' not in key or 'status="200"' not in key:
+            continue
+        flavour = _extract_label_value(key, 'flavour')
+        if not flavour:
+            continue
+        requests_by_flavour[flavour] = requests_by_flavour.get(flavour, 0.0) + value
     return requests_by_flavour
 
 
