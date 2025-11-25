@@ -269,6 +269,16 @@ def parse_prometheus_metrics(text: str) -> Dict[str, float]:
     return metrics
 
 
+def get_aggregated_metric(metrics: Dict[str, float], metric_name: str) -> float:
+    """Sum a metric value across all labels."""
+    total = 0.0
+    for key, value in metrics.items():
+        # Match exact name or name with labels
+        if key == metric_name or key.startswith(f"{metric_name}{{"):
+            total += value
+    return total
+
+
 def query_prometheus(query: str, warn_on_empty: bool = False) -> float:
     """Execute a PromQL query and return the scalar result."""
     try:
@@ -620,15 +630,15 @@ def test_strategy(policy: str, config_overrides: Dict[str, str], output_dir: Pat
 
                 # Calculate latency averages
                 # Router E2E
-                curr_e2e_sum = router_metrics.get('router_request_duration_seconds_sum', 0.0)
-                curr_e2e_count = router_metrics.get('router_request_duration_seconds_count', 0.0)
+                curr_e2e_sum = get_aggregated_metric(router_metrics, 'router_request_duration_seconds_sum')
+                curr_e2e_count = get_aggregated_metric(router_metrics, 'router_request_duration_seconds_count')
                 delta_e2e_sum = curr_e2e_sum - last_e2e_sum
                 delta_e2e_count = curr_e2e_count - last_e2e_count
                 avg_e2e = (delta_e2e_sum / delta_e2e_count) if delta_e2e_count > 0 else 0.0
                 
                 # Consumer Queue
-                curr_queue_sum = consumer_metrics.get('consumer_queue_duration_seconds_sum', 0.0)
-                curr_queue_count = consumer_metrics.get('consumer_queue_duration_seconds_count', 0.0)
+                curr_queue_sum = get_aggregated_metric(consumer_metrics, 'consumer_queue_duration_seconds_sum')
+                curr_queue_count = get_aggregated_metric(consumer_metrics, 'consumer_queue_duration_seconds_count')
                 delta_queue_sum = curr_queue_sum - last_queue_sum
                 delta_queue_count = curr_queue_count - last_queue_count
                 avg_queue = (delta_queue_sum / delta_queue_count) if delta_queue_count > 0 else 0.0
