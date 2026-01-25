@@ -9,6 +9,7 @@ This directory contains tools for testing the carbon-aware scheduler with contro
 A Flask server that mimics the Carbon Intensity UK API with predefined test scenarios.
 
 **Features:**
+
 - Multiple predefined scenarios (rising, peak, falling, low, volatile, etc.)
 - Runtime scenario switching via REST API
 - Custom patterns from JSON files
@@ -24,15 +25,16 @@ python3 mock-carbon-api.py --scenario rising
 python3 mock-carbon-api.py --scenario custom --file my-pattern.json
 
 # Change scenario at runtime
-curl -X POST http://localhost:5000/scenario \
+curl -X POST http://localhost:5001/scenario \
   -H "Content-Type: application/json" \
   -d '{"scenario": "peak"}'
 
 # Get current scenario
-curl http://localhost:5000/scenario
+curl http://localhost:5001/scenario
 ```
 
 **Available Scenarios:**
+
 - `rising`: Morning pattern with increasing intensity (120 → 350 gCO2/kWh)
 - `peak`: Midday peak with sustained high intensity (300-330 gCO2/kWh)
 - `falling`: Evening pattern with decreasing intensity (280 → 60 gCO2/kWh)
@@ -46,13 +48,13 @@ curl http://localhost:5000/scenario
 
 ```bash
 # Configure decision engine to use mock API
-kubectl set env deployment/decision-engine -n carbonshift \
-  CARBON_API_URL=http://mock-carbon-api:5000 \
+kubectl set env deployment/carbonrouter-decision-engine -n carbonrouter-system \
+  CARBON_API_URL=http://mock-carbon-api:5001 \
   CARBON_API_CACHE_TTL=30
 
 # Or use port-forward for local testing
-kubectl port-forward -n carbonshift svc/decision-engine 8080:8080
-# Then run mock API on localhost:5000
+kubectl port-forward -n carbonrouter-system svc/decision-engine 8080:8080
+# Then run mock API on localhost:5001
 ```
 
 ### 2. Scenario Test Script (`test-carbon-scenarios.sh`)
@@ -63,7 +65,7 @@ Automated bash script that tests multiple carbon intensity scenarios and validat
 
 ```bash
 # Ensure decision engine is accessible
-kubectl port-forward -n carbonshift svc/decision-engine 8080:8080
+kubectl port-forward -n carbonrouter-system svc/decision-engine 8080:8080
 
 # Run all test scenarios
 ./test-carbon-scenarios.sh
@@ -80,6 +82,7 @@ WAIT_TIME=10 \
 ```
 
 **Test Scenarios:**
+
 1. **Rising**: 120 → 280 gCO2/kWh (expects negative carbon_adjustment)
 2. **Falling**: 280 → 120 gCO2/kWh (expects positive carbon_adjustment)
 3. **Peak**: 350 → 340 gCO2/kWh (expects conservative strategy)
@@ -89,6 +92,7 @@ WAIT_TIME=10 \
 7. **Extreme Fall**: 400 → 100 gCO2/kWh (expects very positive adjustment)
 
 **Validation:**
+
 - Checks carbon_adjustment values match expectations
 - Displays flavour weight distribution
 - Reports throttle factors and ceilings
@@ -99,6 +103,7 @@ WAIT_TIME=10 \
 Create JSON files with custom carbon intensity patterns:
 
 **Example: `gradual-rise.json`**
+
 ```json
 {
   "name": "Gradual Morning Rise",
@@ -108,6 +113,7 @@ Create JSON files with custom carbon intensity patterns:
 ```
 
 **Example: `daily-cycle.json`**
+
 ```json
 {
   "name": "24-Hour Daily Cycle",
@@ -121,6 +127,7 @@ Create JSON files with custom carbon intensity patterns:
 ```
 
 **Usage:**
+
 ```bash
 python3 mock-carbon-api.py --scenario custom --file daily-cycle.json
 ```
@@ -136,7 +143,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mock-carbon-api
-  namespace: carbonshift
+  namespace: carbonrouter-system
 spec:
   replicas: 1
   selector:
@@ -152,7 +159,7 @@ spec:
         image: python:3.11-slim
         command: ["python3", "/app/mock-carbon-api.py"]
         ports:
-        - containerPort: 5000
+        - containerPort: 5001
         volumeMounts:
         - name: script
           mountPath: /app
@@ -165,36 +172,36 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mock-carbon-api
-  namespace: carbonshift
+  namespace: carbonrouter-system
 spec:
   selector:
     app: mock-carbon-api
   ports:
-  - port: 5000
-    targetPort: 5000
+  - port: 5001
+    targetPort: 5001
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mock-carbon-api-script
-  namespace: carbonshift
+  namespace: carbonrouter-system
 data:
   mock-carbon-api.py: |
     # (paste the content of mock-carbon-api.py here)
 ```
 
-2. **Configure Decision Engine:**
+1. **Configure Decision Engine:**
 
 ```bash
-kubectl set env deployment/decision-engine -n carbonshift \
-  CARBON_API_URL=http://mock-carbon-api:5000
+kubectl set env deployment/decision-engine -n carbonrouter-system \
+  CARBON_API_URL=http://mock-carbon-api:5001
 ```
 
-3. **Run Tests:**
+1. **Run Tests:**
 
 ```bash
 # Port-forward decision engine
-kubectl port-forward -n carbonshift svc/decision-engine 8080:8080 &
+kubectl port-forward -n carbonrouter-system svc/decision-engine 8080:8080 &
 
 # Run automated tests
 ./test-carbon-scenarios.sh
@@ -214,7 +221,7 @@ curl -X POST http://localhost:8080/schedule/default/my-schedule/manual \
 
 ```bash
 # Set rising scenario in mock API
-curl -X POST http://localhost:5000/scenario \
+curl -X POST http://localhost:5001/scenario \
   -H "Content-Type: application/json" \
   -d '{"scenario": "rising"}'
 
@@ -245,7 +252,7 @@ curl http://localhost:8080/schedule/default/my-schedule | \
 
 ```bash
 # Simulate very clean period
-curl -X POST http://localhost:5000/scenario \
+curl -X POST http://localhost:5001/scenario \
   -H "Content-Type: application/json" \
   -d '{"scenario": "extreme-clean"}'
 
@@ -274,24 +281,27 @@ scheduler_forecast_intensity_timestamped
 ## Troubleshooting
 
 **Mock API not accessible:**
+
 ```bash
 # Check pod status
-kubectl get pods -n carbonshift -l app=mock-carbon-api
+kubectl get pods -n carbonrouter-system -l app=mock-carbon-api
 
 # Check logs
-kubectl logs -n carbonshift -l app=mock-carbon-api
+kubectl logs -n carbonrouter-system -l app=mock-carbon-api
 ```
 
 **Decision engine not updating:**
+
 ```bash
 # Check cache TTL
-kubectl get deployment decision-engine -n carbonshift -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="CARBON_API_CACHE_TTL")].value}'
+kubectl get deployment decision-engine -n carbonrouter-system -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="CARBON_API_CACHE_TTL")].value}'
 
 # Force update by restarting
-kubectl rollout restart deployment/decision-engine -n carbonshift
+kubectl rollout restart deployment/decision-engine -n carbonrouter-system
 ```
 
 **Manual schedule expires too quickly:**
+
 ```bash
 # Check validFor setting
 curl http://localhost:8080/schedule/default/my-schedule | jq .validUntil
@@ -308,6 +318,6 @@ curl http://localhost:8080/schedule/default/my-schedule | jq .validUntil
 
 ## Further Reading
 
-- Carbon Intensity UK API: https://api.carbonintensity.org.uk/
+- Carbon Intensity UK API: <https://api.carbonintensity.org.uk/>
 - Decision Engine docs: `/decision-engine/README.md`
 - TrafficSchedule CRD: `/operator/config/crd/`

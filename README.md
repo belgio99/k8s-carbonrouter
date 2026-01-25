@@ -11,25 +11,13 @@ credit-based scheduling to minimise emissions without sacrificing latency goals.
 
 ## System Overview
 
-```text
-+--------------------------------------------------+
-| Kubernetes Cluster                               |
-|                                                  |
-| client --> carbonrouter-router (FastAPI) --------|----+
-|                     | schedule snapshot          |    |
-|                     v                            |    |
-|             RabbitMQ exchange                    |    |
-|                     |                            |    |
-|             carbonrouter-consumer -------------->+    |
-|                     |                                 |
-|                     v                                 |
-|             Prometheus metrics                        |
-+--------------------------------------------------+
-
-operator --> decision engine --> computes TrafficSchedule.Status
-            |                                         ^
-            +-----------------------------------------+
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-diagram/architecture-diagram-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/architecture-diagram/architecture-diagram-light.svg">
+    <img alt="drawing" src="docs/assets/architecture-diagram/architecture-diagram-light.svg" width="700">
+  </picture>
+</p>
 
 Four components work together:
 
@@ -172,6 +160,18 @@ latency histograms, and schedule TTL gauges.
 Grafana dashboards under `grafana/` provide ready-to-import dashboards tailored
 for these metrics.
 
+### Dashboard Preview
+
+The TrafficSchedule Status dashboard provides real-time visibility into carbon-aware scheduling decisions:
+
+![Grafana Dashboard - Traffic distribution, carbon intensity, and credit ledger](docs/assets/grafana-dashboard/grafana-dashboard-1.png)
+
+*Traffic distribution by precision level, carbon intensity gauges, credit ledger balance, and active policy status.*
+
+![Grafana Dashboard - Replica ceilings and request rates](docs/assets/grafana-dashboard/grafana-dashboard-2.png)
+
+*Effective replica ceilings, policy strategy selection, and request/message rates by flavour.*
+
 ## Repository Layout
 
 - `buffer-service/` - FastAPI router and async consumer connected via RabbitMQ.
@@ -187,10 +187,10 @@ for these metrics.
 ## Contributing
 
 Issues and pull requests are welcome. Please ensure new features include unit or
-integration coverage where practical, update the relevant documentation, and run
-`make test` for each component before submitting.
+integration coverage where practical and update the relevant documentation. For
+changes to the operator, run `make test` in the `operator/` directory to execute
+the Go test suite before submitting.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See `LICENSE` files in each
-component (where present) for details.
+Licensed under the Apache License, Version 2.0.

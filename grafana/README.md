@@ -2,6 +2,36 @@
 
 This Grafana dashboard provides a comprehensive visualization of the data exposed in the status of TrafficSchedule resources.
 
+## Dashboard Screenshots
+
+### Overview Panel
+
+<p align="center">
+  <img src="../docs/assets/grafana-dashboard/grafana-dashboard-1.png" alt="Grafana Dashboard Overview" width="800">
+</p>
+
+The top section of the dashboard shows:
+
+- **Traffic Distribution by Flavour**: Stacked area chart displaying the weighted distribution of traffic across precision levels (precision-100, precision-50, precision-30) over time. This shows how the scheduler shifts traffic between high and low precision flavours based on carbon intensity.
+- **Carbon Intensity Now/Next**: Gauge panels showing current and forecasted carbon intensity in gCO2/kWh. Color-coded thresholds (green < 100, yellow < 200, orange < 300, red >= 300) provide quick visual feedback on grid carbon conditions.
+- **Active Policy**: Displays the currently configured scheduling policy (e.g., `forecast-aware-global`).
+- **Credit Ledger**: Time series showing the quality credit balance and velocity. The balance oscillates as the system earns credits (high precision) and spends them (low precision) to maintain SLO targets.
+- **Average Precision**: Gauge showing the rolling average precision delivered to users.
+- **Processing Throttle**: Gauge indicating the current throttling factor (0-100%) applied to autoscaling.
+
+### Scaling and Traffic Panel
+
+<p align="center">
+  <img src="../docs/assets/grafana-dashboard/grafana-dashboard-2.png" alt="Grafana Dashboard Scaling" width="800">
+</p>
+
+The bottom section provides operational metrics:
+
+- **Effective Replica Ceilings**: Shows the carbon-aware maximum replica limits computed by the decision engine for each component (router, consumer, target). During high-carbon periods, these ceilings are reduced to limit energy consumption.
+- **Policy Strategy Selection Rate**: Stacked bar chart showing how often each precision level is selected by the policy over time.
+- **Router Request Rate by Flavour**: Incoming request rate at the router, broken down by the precision flavour assigned to each request.
+- **Consumer Message Rate by Flavour**: Message consumption rate from RabbitMQ queues, showing actual processing throughput per precision level.
+
 ## Template Variables
 
 The dashboard uses the following template variables:

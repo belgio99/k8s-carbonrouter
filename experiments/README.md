@@ -10,8 +10,6 @@ three carbon-aware scheduling policies supported by the decision engine:
 The goal is to run each policy under the same workload, with an identical
 carbon-intensity scenario, and collect metrics for thesis analysis (graphs, tables, raw CSV/JSON data).
 
-> **📋 New to carbon scenarios?** See [CARBON_SETUP_SUMMARY.md](CARBON_SETUP_SUMMARY.md) for a quick guide on using `carbon_scenario.json` with the mock Carbon API.
-
 ---
 
 ## Prerequisites
@@ -49,10 +47,10 @@ This checks:
 * Experiment files
 * Kubernetes resources (TrafficSchedule, deployments)
 * Port-forwards (18000-18003)
-* Mock carbon API (localhost:5000)
+* Mock carbon API (localhost:5001)
 * Decision engine configuration (CARBON_API_URL)
 
-**Complete benchmark run (30 minutes total - 10 minutes per policy):**
+**Complete benchmark run:**
 
 ```bash
 # 1. Start port-forwards (in a separate terminal, or use tmux/screen)
@@ -63,18 +61,14 @@ cd /Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments
 cd /Users/belgio/git-repos/k8s-carbonaware-scheduler/tests
 python3 mock-carbon-api.py --step-minutes 1 --data ../experiments/carbon_scenario.json
 
-# 3. Run the temporal benchmark (all policies)
+# 3. Run the simple benchmark (all policies)
 cd /Users/belgio/git-repos/k8s-carbonaware-scheduler/experiments
-python3 run_temporal_benchmark.py
+python3 run_simple_benchmark.py
 
-# OR run a single policy (10 minutes)
-python3 run_temporal_benchmark.py --policy credit-greedy
+# OR run the autoscaling benchmark (with throttling experiments)
+python3 run_autoscaling_benchmark.py
 
-# 4. Generate graphs
-python3 plot_results.py
-
-# 5. View plots
-open plots/
+# 4. Analyze results using the Jupyter notebooks in this folder
 ```
 
 ---
@@ -82,12 +76,24 @@ open plots/
 
 ## Files Overview
 
-- **carbon_scenario.json** - 180-point carbon intensity pattern (1-minute intervals, covers 3+ hours for forecast-aware-global)
+- **carbon_scenario.json** - Carbon intensity pattern for simple benchmarks
+- **carbon_scenario_autoscaling.json** - Extended carbon intensity pattern for autoscaling benchmarks
+- **demand_scenario.json** - Demand/load pattern for benchmarks
+- **power_profiles.json** - Power consumption profiles for different precision levels
 - **locust_router.py** - Locust workload generator for router endpoint
-- **run_temporal_benchmark.py** - Main orchestration script (tests all 3 carbon-aware policies with 10-minute runs each)
+- **locust_ramping.py** - Locust workload generator with ramping load patterns
+- **run_simple_benchmark.py** - Main benchmark script for testing carbon-aware policies
+- **run_autoscaling_benchmark.py** - Benchmark script for autoscaling/throttling experiments
+- **preflight_check.py** - Validates prerequisites before running benchmarks
 - **setup_portforwards.sh** - Sets up all required port-forwards with verification
-- **plot_results.py** - Generates comprehensive graphs from benchmark results
-- **analyze_results.py** - Post-processing script for timeseries analysis (optional)
+
+### Jupyter Notebooks (Analysis)
+
+- **credit_greedy_analysis.ipynb** - Analysis of credit-greedy strategy results
+- **forecast_aware_analysis_2.ipynb** - Analysis of forecast-aware strategy results
+- **forecast_aware_global_analysis.ipynb** - Analysis of forecast-aware-global strategy results
+- **autoscaling_analysis.ipynb** - Analysis of autoscaling/throttling experiments
+- **ultimate_strategy_showdown.ipynb** - Comparative analysis of all strategies
 
 ---
 
@@ -97,38 +103,21 @@ After running the benchmark, results are saved in `results/`:
 
 ```
 results/
-├── credit-greedy/
-│   ├── timeseries.csv              # Periodic samples (precision, credits, carbon, etc.)
-│   ├── summary.json                # Test summary (total requests, mean precision, etc.)
-│   ├── schedule_before.json        # TrafficSchedule state before test
-│   ├── schedule_after.json         # TrafficSchedule state after test
-│   ├── router_metrics_baseline.txt # Prometheus metrics at start
-│   ├── router_metrics_final.txt    # Prometheus metrics at end
-│   ├── consumer_metrics_final.txt  # Consumer metrics
-│   └── engine_metrics_final.txt    # Decision engine metrics
-├── forecast-aware/
-│   └── ... (same structure)
-└── forecast-aware-global/
-    └── ... (same structure)
-```
-
-Plots are saved in `plots/`:
-
-```
-plots/
-├── credit-greedy/
-│   ├── precision.png       # Precision over time
-│   ├── carbon.png          # Carbon intensity over time
-│   ├── credits.png         # Credit balance over time
-│   └── request_rate.png    # Request rate over time
-├── forecast-aware/
-│   └── ... (same structure)
-├── forecast-aware-global/
-│   └── ... (same structure)
-└── comparison/
-    ├── precision_comparison.png   # All policies on one graph
-    ├── credits_comparison.png     # Credit balance comparison
-    └── summary_comparison.png     # Bar charts (mean precision, total requests, carbon)
+├── simple_YYYYMMDD_HHMMSS/
+│   ├── credit-greedy/
+│   │   ├── timeseries.csv              # Periodic samples (precision, credits, carbon, etc.)
+│   │   ├── summary.json                # Test summary (total requests, mean precision, etc.)
+│   │   ├── schedule_before.json        # TrafficSchedule state before test
+│   │   └── schedule_after.json         # TrafficSchedule state after test
+│   ├── forecast-aware/
+│   │   └── ... (same structure)
+│   └── forecast-aware-global/
+│       └── ... (same structure)
+└── autoscaling_YYYYMMDD_HHMMSS/
+    ├── forecast-aware-global-with-throttle/
+    │   └── ... (same structure)
+    └── forecast-aware-global-no-throttle/
+        └── ... (same structure)
 ```
 
 ---
@@ -152,8 +141,9 @@ Run it in a separate terminal and leave it running:
 
 ### 2. Mock Carbon API
 
-The mock API provides deterministic carbon intensity forecasts. The 180-point
-pattern in `carbon_scenario.json` simulates realistic variations over 3+ hours:
+The mock API provides deterministic carbon intensity forecasts. The patterns
+in `carbon_scenario.json` and `carbon_scenario_autoscaling.json` simulate
+realistic variations:
 
 - Morning rise: 220 → 290 gCO₂/kWh
 - Midday peak: 290 → 100 gCO₂/kWh (sharp drop)
@@ -173,106 +163,52 @@ Set the environment variable:
 ```bash
 kubectl set env deployment/carbonrouter-decision-engine \
   -n carbonrouter-system \
-  CARBON_API_URL=http://host.docker.internal:5000
+  CARBON_API_URL=http://host.docker.internal:5001
 ```
 
-(Or use `http://carbon-api.carbonstat.svc.cluster.local:5000` if deployed in-cluster)
+(Or use `http://carbon-api.carbonstat.svc.cluster.local:5001` if deployed in-cluster)
 
 ### 3. Running the Benchmark
 
-The `run_temporal_benchmark.py` script orchestrates the complete test.
-
-**Run all policies (30 minutes):**
+**Simple Benchmark (policy comparison):**
 
 ```bash
-python3 run_temporal_benchmark.py
+python3 run_simple_benchmark.py
 ```
 
-**Run a single policy (10 minutes):**
+This tests all three policies (credit-greedy, forecast-aware, forecast-aware-global)
+under the same conditions and collects metrics for comparison.
+
+**Autoscaling Benchmark (throttling experiments):**
 
 ```bash
-# Test only credit-greedy
-python3 run_temporal_benchmark.py --policy credit-greedy
-
-# Test only forecast-aware
-python3 run_temporal_benchmark.py --policy forecast-aware
-
-# Test only forecast-aware-global
-python3 run_temporal_benchmark.py --policy forecast-aware-global
+python3 run_autoscaling_benchmark.py
 ```
 
-**Run multiple specific policies (20 minutes):**
+This tests the forecast-aware-global policy with and without autoscaling throttling
+to measure the impact on carbon emissions and queue depth.
+
+### 4. Analyzing Results
+
+After the benchmark completes, use the Jupyter notebooks to analyze results:
 
 ```bash
-python3 run_temporal_benchmark.py --policy credit-greedy --policy forecast-aware
+# Start Jupyter
+jupyter notebook
+
+# Open one of the analysis notebooks:
+# - credit_greedy_analysis.ipynb
+# - forecast_aware_analysis_2.ipynb
+# - forecast_aware_global_analysis.ipynb
+# - autoscaling_analysis.ipynb
+# - ultimate_strategy_showdown.ipynb
 ```
 
-**For each selected policy, the script:**
-1. Patch TrafficSchedule to use the policy
-2. Restart decision engine to reset credits
-3. Restart router to reset metrics
-4. Reset mock carbon API to start from beginning
-5. Collect baseline metrics
-6. Launch Locust workload (150 users, 50/s spawn rate, 10 minutes)
-7. Sample metrics every 30 seconds during the test
-8. Collect final metrics and compute deltas
-9. Save all data to `results/<policy>/`
-
-Run the benchmark (takes ~30 minutes total):
-
-```bash
-python3 run_temporal_benchmark.py
-```
-
-The script will print progress updates:
-
-```
-============================================================
-Temporal Policy Benchmark
-============================================================
-
-Found 3 policies to test: credit-greedy, forecast-aware, forecast-aware-global
-Test duration: 10.0 minutes per policy
-Total estimated time: 30.0 minutes
-
-Testing policy: credit-greedy (1/3)
-  ⏳ Collecting baseline...
-  ✓ Baseline collected (starting from 0 requests)
-  🚀 Starting Locust (150 users, 50/s spawn rate)...
-  📊 Sampling every 30s...
-    Sample 5: 2847 req/period, prec=0.852, credits=145.23
-    ...
-  ✓ Collected 20 samples
-  ✓ Final metrics collected (total delta: 11388 requests)
-
-  Results:
-    Duration: 10.0 minutes
-    Samples: 20
-    Total requests: 11388
-    Mean precision: 0.847
-    Mean carbon intensity: 189.3 gCO₂/kWh
-    Final credit balance: 142.56
-
-...
-```
-
-### 4. Generating Graphs
-
-After the benchmark completes, generate visualization plots:
-
-```bash
-python3 plot_results.py
-```
-
-This creates:
-- **Individual plots** for each policy (4 plots per policy)
-- **Comparison plots** showing all policies together
-- **Summary bar charts** for mean values
-
-View the results:
-
-```bash
-open plots/
-```
+The notebooks generate visualizations including:
+- Precision over time
+- Carbon intensity correlation
+- Credit balance dynamics
+- Request distribution by precision level
+- Comparative bar charts and radar plots
 
 ---
