@@ -221,7 +221,7 @@ def main():
     except Exception as e:
         print(f"   ✗ Mock API not responding: {e}")
         print("\n   Start mock API with:")
-        print("   cd ../tests && python3 mock-carbon-api.py --step-minutes 1 --data ../experiments/carbon_scenario.json")
+        print("   python3 mock-carbon-api.py --step-minutes 1 --data carbon_scenario.json")
         all_ok = False
     
     # Check decision engine configuration

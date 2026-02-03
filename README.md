@@ -1,4 +1,14 @@
-# k8s-carbonaware-scheduler
+# K8s-CarbonRouter
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.28+-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org/)
+[![Helm](https://img.shields.io/badge/Helm-3.x-0F1689?logo=helm&logoColor=white)](https://helm.sh/)
+[![Build](https://github.com/belgio99/k8s-carbonrouter/actions/workflows/build_n_push_ghcr.yaml/badge.svg)](https://github.com/belgio99/k8s-carbonrouter/actions)
+[![GitHub Stars](https://img.shields.io/github/stars/belgio99/k8s-carbonrouter?style=flat&logo=github)](https://github.com/belgio99/k8s-carbonrouter/stargazers)
+[![Carbon Aware](https://img.shields.io/badge/Carbon_Aware-🌱_Green_Software-22C55E)](https://greensoftware.foundation/)
+[![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 A Kubernetes-native reference implementation for carbon-aware workload routing. It
 combines a scheduling decision engine, a buffer layer that can steer HTTP
@@ -8,6 +18,14 @@ Kubernetes operator that keeps everything in sync.
 The project originated from the 2025 ESOCC paper "Carbon-aware Software
 Services" and demonstrates how to apply precision-based service flavours and
 credit-based scheduling to minimise emissions without sacrificing latency goals.
+
+**Author/Maintainer:** Giovanni Bellini
+
+**Thesis Name:** Design and Implementation of a Kubernetes Framework for Carbon-Aware Traffic Scheduling and Routing in Microservices Architectures
+
+**Degree:** MSc in Computer Science, University of Pisa, Dec 2025.
+
+**Supervisors:** Antonio Brogi, Stefano Forti, Jacopo Soldani
 
 ## System Overview
 
@@ -182,7 +200,7 @@ The TrafficSchedule Status dashboard provides real-time visibility into carbon-a
   umbrella deployment.
 - `demo/` - Minimal manifests to bootstrap the system in a namespace.
 - `docs/` - Design documents such as the credit-based scheduler deep dive.
-- `tests/` - Load-testing scripts (Locust) and shared test utilities.
+- `experiments/` - Benchmarking tools, load-testing scripts (Locust), carbon intensity scenarios, and Jupyter notebooks for thesis analysis.
 
 ## Contributing
 
@@ -193,4 +211,6 @@ the Go test suite before submitting.
 
 ## License
 
-Licensed under the Apache License, Version 2.0.
+Copyright 2025 Giovanni Bellini
+
+This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.

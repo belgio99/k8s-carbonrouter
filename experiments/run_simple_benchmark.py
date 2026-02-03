@@ -122,7 +122,7 @@ def reset_carbon_pattern() -> None:
         if health_response.status_code != 200:
             print(f"  ⚠️  Warning: Carbon API health check failed (status {health_response.status_code})")
             print(f"     The API may be running an old version. Consider restarting it:")
-            print(f"     pkill -f mock-carbon-api && cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+            print(f"     pkill -f mock-carbon-api && python3 mock-carbon-api.py --scenario custom --file carbon_scenario.json --port 5001 &")
             return
 
         # Try to reset the pattern
@@ -134,14 +134,14 @@ def reset_carbon_pattern() -> None:
         elif response.status_code == 404:
             print(f"  ⚠️  Warning: Carbon API /reset endpoint not found!")
             print(f"     The running carbon API process may be outdated.")
-            print(f"     To fix: pkill -f mock-carbon-api && cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+            print(f"     To fix: pkill -f mock-carbon-api && python3 mock-carbon-api.py --scenario custom --file carbon_scenario.json --port 5001 &")
             print(f"     Continuing test but carbon intensity may not start from beginning...")
         else:
             print(f"  ⚠️  Warning: Could not reset carbon API (status {response.status_code})")
             print(f"     Response: {response.text[:200]}")
     except requests.exceptions.ConnectionError:
         print(f"  ⚠️  ERROR: Carbon API not running at {MOCK_CARBON_URL}")
-        print(f"     Start it with: cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+        print(f"     Start it with: python3 mock-carbon-api.py --scenario custom --file carbon_scenario.json --port 5001 &")
         print(f"     Then re-run this test.")
         sys.exit(1)
     except Exception as e:

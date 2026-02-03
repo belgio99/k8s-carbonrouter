@@ -203,7 +203,7 @@ quick_test() {
 load_custom_scenario() {
     echo -e "${GREEN}Load Custom Scenario File${NC}"
     echo ""
-    echo "Available scenario files in tests/scenarios/:"
+    echo "Available scenario files in experiments/scenarios/:"
     echo ""
     
     if [ -d "$SCRIPT_DIR/scenarios" ]; then

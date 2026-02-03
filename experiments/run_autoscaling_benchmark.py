@@ -135,7 +135,7 @@ def reset_carbon_pattern() -> None:
     except requests.exceptions.ConnectionError:
         print(f"  ⚠️  Carbon API not running at {MOCK_CARBON_URL}")
         print(f"     Start it with:")
-        print(f"     cd tests && python3 mock-carbon-api.py --scenario custom --file ../experiments/carbon_scenario.json --port 5001 &")
+        print(f"     python3 mock-carbon-api.py --scenario custom --file carbon_scenario.json --port 5001 &")
         sys.exit(1)
     except Exception as e:
         print(f"  ⚠️  Carbon API error: {e}")
